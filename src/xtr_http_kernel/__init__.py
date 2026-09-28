@@ -25,6 +25,7 @@ from .event import (
 )
 from .exception import HttpKernelError
 from .kernel_events import KernelEvents
+from .request_lifecycle_middleware import RequestLifecycleMiddleware
 
 try:
     __version__ = version("xtr-http-kernel")
@@ -38,6 +39,7 @@ __all__ = [
     "HttpKernelError",
     "KernelEvents",
     "RequestEvent",
+    "RequestLifecycleMiddleware",
     "ResponseEvent",
     "TerminateEvent",
     "__version__",
