@@ -12,12 +12,12 @@ imported from its own module by whoever knows that extra is installed.
 
 from __future__ import annotations
 
-from .disallow_search_indexing_listener import DisallowSearchIndexingListener
+from .disallow_robots_indexing_listener import DisallowRobotsIndexingListener
 from .error_logging_listener import ErrorLoggingListener
 from .request_id_listener import RequestIdListener
 
 __all__ = [
-    "DisallowSearchIndexingListener",
+    "DisallowRobotsIndexingListener",
     "ErrorLoggingListener",
     "RequestIdListener",
 ]

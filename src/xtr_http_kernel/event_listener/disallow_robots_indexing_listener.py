@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, final
 if TYPE_CHECKING:
     from xtr_http_kernel.event import ResponseEvent
 
-__all__ = ["DisallowSearchIndexingListener"]
+__all__ = ["DisallowRobotsIndexingListener"]
 
 
 @final
-class DisallowSearchIndexingListener:
+class DisallowRobotsIndexingListener:
     """Marks every outgoing response ``X-Robots-Tag: noindex`` when enabled.
 
     A staging deployment or an internal tool wants the whole application out

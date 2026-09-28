@@ -21,7 +21,7 @@ from xtr_service_contracts import ContainerInterface  # noqa: TC002
 
 from xtr_http_kernel.event import ExceptionEvent, RequestEvent, ResponseEvent, TerminateEvent
 from xtr_http_kernel.event_listener import (
-    DisallowSearchIndexingListener,
+    DisallowRobotsIndexingListener,
     ErrorLoggingListener,
     RequestIdListener,
 )
@@ -99,7 +99,7 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
             .add_tag(_LISTENER_TAG, event=ResponseEvent, method="on_response")
         )
         _ = (
-            services.set(DisallowSearchIndexingListener)
+            services.set(DisallowRobotsIndexingListener)
             .set_argument("enabled", config.disallow_search_indexing)
             .add_tag(_LISTENER_TAG, event=ResponseEvent, method="on_response")
         )
