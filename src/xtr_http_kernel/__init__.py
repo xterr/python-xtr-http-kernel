@@ -25,7 +25,9 @@ from .event import (
 )
 from .exception import HttpKernelError
 from .kernel_events import KernelEvents
+from .middleware_tag import MIDDLEWARE_TAG
 from .request_lifecycle_middleware import RequestLifecycleMiddleware
+from .setup import setup
 
 try:
     __version__ = version("xtr-http-kernel")
@@ -34,6 +36,7 @@ except PackageNotFoundError:  # pragma: no cover
     __version__ = "0+unknown"
 
 __all__ = [
+    "MIDDLEWARE_TAG",
     "ExceptionEvent",
     "FinishRequestEvent",
     "HttpKernelError",
@@ -43,4 +46,5 @@ __all__ = [
     "ResponseEvent",
     "TerminateEvent",
     "__version__",
+    "setup",
 ]
