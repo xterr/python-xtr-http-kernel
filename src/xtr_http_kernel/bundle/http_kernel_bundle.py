@@ -26,7 +26,7 @@ from xtr_event_dispatcher.bundle import EventDispatcherBundle
 
 # Read at runtime: the container fills factory parameters from annotations.
 from xtr_logging_contracts import LoggerInterface
-from xtr_service_contracts import ContainerInterface  # noqa: TC002
+from xtr_service_contracts import ContainerInterface  # noqa: TC002 — read at runtime, as above
 
 from xtr_http_kernel.event import ExceptionEvent, RequestEvent, ResponseEvent, TerminateEvent
 from xtr_http_kernel.event_listener import (

@@ -24,10 +24,13 @@ classifiers = [
 # an extra: there is nothing left of it once either is gone.
 dependencies = [
     "fastapi>=0.121.3",
+    # Imported directly — requests, responses, middleware — not only through fastapi.
+    "starlette>=0.40",
     "xtr-dependency-injection[fastapi]>=1.0,<2",
     "xtr-event-dispatcher>=1.0,<2",
     "xtr-event-dispatcher-contracts>=1.0,<2",
     "xtr-logging-contracts>=1.0,<2",
+    "xtr-service-contracts>=1.0,<2",
     "typing-extensions>=4.4",
 ]
 
