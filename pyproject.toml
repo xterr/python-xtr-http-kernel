@@ -23,7 +23,7 @@ classifiers = [
 # takes the container layer and the web framework outright rather than behind
 # an extra: there is nothing left of it once either is gone.
 dependencies = [
-    "fastapi>=0.121",
+    "fastapi>=0.121.3",
     "xtr-dependency-injection[fastapi]>=1.0,<2",
     "xtr-event-dispatcher>=1.0,<2",
     "xtr-event-dispatcher-contracts>=1.0,<2",
