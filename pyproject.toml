@@ -115,6 +115,9 @@ ignore = [
     "TRY003",
     "EM101",
     "EM102",
+    # The logging contract takes a context mapping, not the standard
+    # library's format arguments; PLE1205 reads one as the other.
+    "PLE1205",
 ]
 fixable = ["ALL"]
 unfixable = []
