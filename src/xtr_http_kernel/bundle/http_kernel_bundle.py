@@ -12,7 +12,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final, cast, final
 
 from typing_extensions import override
-from xtr_dependency_injection import Bundle, as_bundle, bundle_active, required_bundle
+
+# ServiceKey stays a runtime import: it annotates a factory parameter the
+# container evaluates when the definitions are emitted.
+from xtr_dependency_injection import (
+    Bundle,
+    ServiceKey,
+    as_bundle,
+    bundle_active,
+    required_bundle,
+)
 from xtr_event_dispatcher.bundle import EventDispatcherBundle
 
 # Read at runtime: the container fills factory parameters from annotations.
@@ -25,6 +34,8 @@ from xtr_http_kernel.event_listener import (
     ErrorLoggingListener,
     RequestIdListener,
 )
+from xtr_http_kernel.exception import InvalidMiddlewarePriorityError
+from xtr_http_kernel.middleware_stack import MiddlewareStack
 from xtr_http_kernel.middleware_tag import MIDDLEWARE_TAG
 
 from .http_kernel_config import HttpKernelConfig
@@ -34,6 +45,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
 
     from xtr_dependency_injection import ContainerBuilder, ServiceConfigurator
+
+    from xtr_http_kernel.middleware_stack import MiddlewareFactory
 
 __all__ = ["HttpKernelBundle"]
 
@@ -81,11 +94,10 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
         router commands; until then a console-only application simply gets
         no commands from this bundle.
         """
-        _ = (
-            services.set(RequestLifecycleMiddlewareFactory)
-            .set_argument("priority", config.middleware_priority)
-            .add_tag(MIDDLEWARE_TAG)
+        _ = services.set(RequestLifecycleMiddlewareFactory).add_tag(
+            MIDDLEWARE_TAG, priority=config.middleware_priority
         )
+        _ = services.set(_middleware_stack).set_argument("keys", ())
         _ = (
             services.set(RequestIdListener)
             .set_argument("header", config.request_id_header)
@@ -127,6 +139,46 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
             _ = services.set(_error_logging_listener(config.log_channel)).add_tag(
                 _LISTENER_TAG, event=ExceptionEvent, method="on_exception"
             )
+
+    @override
+    def process(self, builder: ContainerBuilder) -> None:
+        """Order every tagged middleware into the stack, highest priority outermost.
+
+        Runs after every bundle loaded, so the builder holds every tag. The
+        tag's ``priority`` attribute is 0 when absent; ties keep
+        registration order.
+
+        Raises:
+            InvalidMiddlewarePriorityError: If a tag's ``priority`` is not
+                an integer.
+        """
+        entries: list[tuple[int, int, ServiceKey]] = []
+        for order, (key, attributes) in enumerate(
+            builder.find_tagged_service_ids(MIDDLEWARE_TAG).items()
+        ):
+            priority = attributes[0].get("priority", 0)
+            if not isinstance(priority, int):
+                raise InvalidMiddlewarePriorityError(key, priority)
+            entries.append((priority, order, key))
+        entries.sort(key=lambda entry: (-entry[0], entry[1]))
+        _ = builder.get_definition(MiddlewareStack).set_argument(
+            "keys", tuple(key for _, _, key in entries)
+        )
+
+
+async def _middleware_stack(
+    container: ContainerInterface, keys: tuple[ServiceKey, ...]
+) -> MiddlewareStack:
+    """Build the stack by resolving each ordered key through ``container``.
+
+    ``keys`` comes from the bundle's ``process`` hook: the tagged
+    definitions, already ordered highest priority first.
+    """
+    factories = [
+        cast("MiddlewareFactory", await container.get(provided, qualifier))
+        for provided, qualifier in keys
+    ]
+    return MiddlewareStack(factories)
 
 
 def _error_logging_listener(

@@ -14,16 +14,10 @@ async def _app(scope: object, receive: object, send: object) -> None:
     del scope, receive, send
 
 
-def test_it_advertises_its_place_with_a_priority_attribute() -> None:
-    factory = RequestLifecycleMiddlewareFactory(EventDispatcher(), priority=7)
-
-    assert factory.priority == 7
-
-
-def test_the_priority_defaults_to_zero() -> None:
+def test_it_carries_no_priority_of_its_own() -> None:
     factory = RequestLifecycleMiddlewareFactory(EventDispatcher())
 
-    assert factory.priority == 0
+    assert not hasattr(factory, "priority")
 
 
 def test_it_wraps_the_app_in_the_lifecycle_middleware() -> None:

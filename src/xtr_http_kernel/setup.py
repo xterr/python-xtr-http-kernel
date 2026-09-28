@@ -18,8 +18,8 @@ from xtr_dependency_injection.integration.fastapi import attach, detach, request
 from xtr_dependency_injection.testing import apply_overrides
 
 from ._kernel_middleware import KernelMiddleware
-from ._state import FACTORIES_KEY, OVERRIDES_KEY
-from .middleware_tag import MIDDLEWARE_TAG
+from ._state import OVERRIDES_KEY, STACK_KEY
+from .middleware_stack import MiddlewareStack
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Hashable, Mapping
@@ -28,8 +28,6 @@ if TYPE_CHECKING:
     from starlette.types import Lifespan
     from xtr_dependency_injection import Kernel
     from xtr_dependency_injection.kernel.compiled_kernel import CompiledKernel
-
-    from ._kernel_middleware import MiddlewareFactory
 
 __all__ = ["setup"]
 
@@ -45,10 +43,12 @@ def setup(app: FastAPI, kernel: Kernel) -> None:
     resolve. The application's own lifespan runs inside, its state passing
     through untouched. On the way out the kernel is detached and shut down.
 
-    Each life also collects the middleware factories bundles tagged
-    ``http_kernel.middleware`` and composes them, highest ``priority``
-    outermost, into the chain every request runs through — inside the one
-    middleware this call adds, so the whole chain sees the request's scope.
+    Each life also fetches the :class:`~xtr_http_kernel.middleware_stack.MiddlewareStack`
+    the kernel's bundles contributed — ordered when the kernel was built,
+    highest tag ``priority`` outermost — as the chain every request runs
+    through, inside the one middleware this call adds, so the whole chain
+    sees the request's scope. A kernel without the http_kernel bundle
+    serves with an empty stack.
 
     Args:
         app: The application to serve, its routes and middleware already
@@ -74,12 +74,12 @@ def _serving_lifespan(app: FastAPI, kernel: Kernel, inner: Lifespan[FastAPI]) ->
         async with compiled.lifespan(app):
             attach(app, compiled)
             try:
-                setattr(app.state, FACTORIES_KEY, await _contributed(compiled))
+                setattr(app.state, STACK_KEY, await _stack(compiled))
                 async with inner(target) as state:
                     yield state
             finally:
-                if hasattr(app.state, FACTORIES_KEY):
-                    delattr(app.state, FACTORIES_KEY)
+                if hasattr(app.state, STACK_KEY):
+                    delattr(app.state, STACK_KEY)
                 detach(app)
 
     # The wrapper yields whatever the application's own lifespan yields;
@@ -88,22 +88,9 @@ def _serving_lifespan(app: FastAPI, kernel: Kernel, inner: Lifespan[FastAPI]) ->
     return cast("Lifespan[FastAPI]", serving)
 
 
-async def _contributed(compiled: CompiledKernel) -> tuple[MiddlewareFactory, ...]:
-    """Return the tagged middleware factories, the outermost first.
-
-    The kernel's report lists definitions with their tags; every definition
-    tagged ``http_kernel.middleware`` provides a factory. Sorted by each
-    factory's ``priority`` attribute, highest first — ties keep the report's
-    order.
-    """
-    entries: list[tuple[int, int, MiddlewareFactory]] = []
-    for order, definition in enumerate(compiled.report.definitions):
-        if MIDDLEWARE_TAG not in definition.tags:
-            continue
-        provided, qualifier = definition.key
-        factory = cast("MiddlewareFactory", await compiled.container.get(provided, qualifier))
-        # The factory contract: ``priority`` is an int when present.
-        priority = cast("int", getattr(factory, "priority", 0))
-        entries.append((priority, order, factory))
-    entries.sort(key=lambda entry: (-entry[0], entry[1]))
-    return tuple(factory for _, _, factory in entries)
+async def _stack(compiled: CompiledKernel) -> MiddlewareStack:
+    """Return the kernel's middleware stack, empty when none was registered."""
+    container = compiled.container
+    if container.has(MiddlewareStack):
+        return await container.get(MiddlewareStack)
+    return MiddlewareStack()

@@ -1,4 +1,4 @@
-"""The middleware factory the bundle tags for the setup call to compose."""
+"""The middleware factory the bundle tags for the kernel to order into the stack."""
 
 from __future__ import annotations
 
@@ -19,21 +19,16 @@ __all__ = ["RequestLifecycleMiddlewareFactory"]
 class RequestLifecycleMiddlewareFactory:
     """Wraps a downstream app in the lifecycle middleware, around the container's dispatcher.
 
-    Tagged ``http_kernel.middleware``, so the setup call collects it when the
-    application's lifespan starts; ``priority`` — the config's
-    ``middleware_priority`` — is where it sits in the composed chain, highest
-    outermost.
-
-    Attributes:
-        priority: The factory's place among the contributed factories.
+    Tagged ``http_kernel.middleware`` with the config's
+    ``middleware_priority`` as the tag's ``priority``, so the bundle orders
+    it into the stack when the kernel is built — highest outermost.
     """
 
-    __slots__ = ("_dispatcher", "priority")
+    __slots__ = ("_dispatcher",)
 
-    def __init__(self, dispatcher: EventDispatcherInterface, priority: int = 0) -> None:
-        """Hand ``dispatcher`` to every middleware built, sitting at ``priority``."""
+    def __init__(self, dispatcher: EventDispatcherInterface) -> None:
+        """Hand ``dispatcher`` to every middleware built."""
         self._dispatcher = dispatcher
-        self.priority = priority
 
     def __call__(self, app: ASGIApp) -> ASGIApp:
         """Return ``app`` wrapped in the lifecycle middleware."""

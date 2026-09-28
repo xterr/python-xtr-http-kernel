@@ -14,7 +14,7 @@ import pytest
 from fastapi import FastAPI
 from xtr_dependency_injection import Kernel
 
-from xtr_http_kernel import setup
+from xtr_http_kernel import MiddlewareStack, setup
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.anyio
 
-_FACTORIES_KEY = "_xtr_http_kernel_middleware"
+_STACK_KEY = "_xtr_http_kernel_middleware"
 
 
 class ScopeJournal:
@@ -107,7 +107,9 @@ async def test_the_scope_closes_and_the_failure_propagates_when_downstream_raise
     assert opener.entries == ["scope opened", "scope closed"]
 
 
-def _labelling_factory(label: str, journal: list[str], wraps: list[str]) -> object:
+def _labelling_factory(
+    label: str, journal: list[str], wraps: list[str]
+) -> Callable[[ASGIApp], ASGIApp]:
     def factory(app: ASGIApp) -> ASGIApp:
         wraps.append(label)
 
@@ -120,17 +122,19 @@ def _labelling_factory(label: str, journal: list[str], wraps: list[str]) -> obje
     return factory
 
 
-async def test_the_contributed_factories_wrap_outermost_first() -> None:
+async def test_the_parked_stack_wraps_outermost_first() -> None:
     opener = ScopeJournal()
     middleware = _kernel_middleware(_downstream(opener.entries), opener)
     application = FastAPI()
     wraps: list[str] = []
     setattr(
         application.state,
-        _FACTORIES_KEY,
-        (
-            _labelling_factory("outer", opener.entries, wraps),
-            _labelling_factory("inner", opener.entries, wraps),
+        _STACK_KEY,
+        MiddlewareStack(
+            (
+                _labelling_factory("outer", opener.entries, wraps),
+                _labelling_factory("inner", opener.entries, wraps),
+            )
         ),
     )
 
@@ -139,20 +143,22 @@ async def test_the_contributed_factories_wrap_outermost_first() -> None:
     assert opener.entries == ["scope opened", "outer", "inner", "downstream", "scope closed"]
 
 
-async def test_the_chain_is_composed_once_per_set_of_factories() -> None:
+async def test_the_chain_is_composed_once_per_stack() -> None:
     opener = ScopeJournal()
     middleware = _kernel_middleware(_downstream(opener.entries), opener)
     application = FastAPI()
     wraps: list[str] = []
-    first = (_labelling_factory("first", opener.entries, wraps),)
-    setattr(application.state, _FACTORIES_KEY, first)
+    first = MiddlewareStack((_labelling_factory("first", opener.entries, wraps),))
+    setattr(application.state, _STACK_KEY, first)
 
     await middleware(_scope("http", application), _receive, _send)
     await middleware(_scope("http", application), _receive, _send)
     assert wraps == ["first"]
 
     setattr(
-        application.state, _FACTORIES_KEY, (_labelling_factory("second", opener.entries, wraps),)
+        application.state,
+        _STACK_KEY,
+        MiddlewareStack((_labelling_factory("second", opener.entries, wraps),)),
     )
     await middleware(_scope("http", application), _receive, _send)
     assert wraps == ["first", "second"]

@@ -9,5 +9,6 @@ than forcing a message to be parsed.
 from __future__ import annotations
 
 from .http_kernel_error import HttpKernelError
+from .invalid_middleware_priority_error import InvalidMiddlewarePriorityError
 
-__all__ = ["HttpKernelError"]
+__all__ = ["HttpKernelError", "InvalidMiddlewarePriorityError"]

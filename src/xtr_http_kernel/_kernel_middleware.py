@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final, cast, final
 
-from ._state import FACTORIES_KEY
+from ._state import STACK_KEY
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -20,7 +20,8 @@ if TYPE_CHECKING:
     from starlette.applications import Starlette
     from starlette.types import ASGIApp, Receive, Scope, Send
 
-    MiddlewareFactory = Callable[[ASGIApp], ASGIApp]
+    from .middleware_stack import MiddlewareStack
+
     ScopeOpener = Callable[[Starlette], AbstractAsyncContextManager[None]]
 
 __all__ = ["KernelMiddleware"]
@@ -32,22 +33,21 @@ _SCOPED_TYPES: Final = frozenset({"http", "websocket"})
 class KernelMiddleware:
     """Runs each connection inside the scope its scoped services live in.
 
-    ``http`` and ``websocket`` connections run through the chain the
-    application's current life contributed — the factories the setup call
-    parked on the application's state, composed over the downstream app —
-    with the scope open around the whole of it, so a scoped service lives
-    until the response has been sent. The scope closes on every path, a
-    failing downstream included; the failure still propagates. The
-    ``lifespan`` connection passes through untouched.
+    ``http`` and ``websocket`` connections run through the middleware stack
+    the application's current life parked on its state — composed over the
+    downstream app — with the scope open around the whole of it, so a
+    scoped service lives until the response has been sent. The scope closes
+    on every path, a failing downstream included; the failure still
+    propagates. The ``lifespan`` connection passes through untouched.
     """
 
-    __slots__ = ("_app", "_chain", "_factories", "_open_scope")
+    __slots__ = ("_app", "_chain", "_open_scope", "_stack")
 
     def __init__(self, app: ASGIApp, *, open_scope: ScopeOpener) -> None:
         """Wrap ``app``, opening scopes through ``open_scope``."""
         self._app = app
         self._open_scope = open_scope
-        self._factories: tuple[MiddlewareFactory, ...] | None = None
+        self._stack: MiddlewareStack | None = None
         self._chain: ASGIApp = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -63,18 +63,14 @@ class KernelMiddleware:
     def _composed(self, application: Starlette) -> ASGIApp:
         """Return the chain for the application's current life, composed once.
 
-        The factories tuple is frozen per application life, so its identity
-        tells whether the cached chain still stands.
+        The stack is frozen per application life, so its identity tells
+        whether the cached chain still stands.
         """
-        factories = cast(
-            "tuple[MiddlewareFactory, ...]",
-            getattr(application.state, FACTORIES_KEY, ()),
+        stack = cast(
+            "MiddlewareStack | None",
+            getattr(application.state, STACK_KEY, None),
         )
-        if factories is not self._factories:
-            chain: ASGIApp = self._app
-            # The tuple holds the outermost factory first, so it wraps last.
-            for factory in reversed(factories):
-                chain = factory(chain)
-            self._factories = factories
-            self._chain = chain
+        if stack is not self._stack:
+            self._stack = stack
+            self._chain = self._app if stack is None else stack.wrap(self._app)
         return self._chain

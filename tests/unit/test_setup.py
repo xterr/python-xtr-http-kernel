@@ -12,8 +12,10 @@ from xtr_dependency_injection.exception import FastapiIntegrationError
 from xtr_dependency_injection.integration.fastapi import provider, request_scope
 
 from tests.fixtures.served_app.services import Greeter
-from tests.support.bundles import ServedBundle
-from xtr_http_kernel import setup
+from tests.support.bundles import PlainStamp, ServedBundle, Stamp
+from tests.support.serving import serving
+from xtr_http_kernel import MiddlewareStack, setup
+from xtr_http_kernel.bundle import HttpKernelBundle
 from xtr_http_kernel.testing import override_services
 
 if TYPE_CHECKING:
@@ -23,7 +25,7 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.anyio
 
-_FACTORIES_KEY = "_xtr_http_kernel_middleware"
+_STACK_KEY = "_xtr_http_kernel_middleware"
 
 
 def _kernel() -> Kernel:
@@ -121,13 +123,41 @@ async def test_the_applications_own_lifespan_state_passes_through() -> None:
         assert state == {"marker": "from-the-app"}
 
 
-async def test_the_contributed_factories_wait_on_the_state_sorted_outermost_first() -> None:
+async def test_the_kernels_stack_waits_on_the_state_sorted_outermost_first() -> None:
     app = FastAPI()
-    setup(app, _kernel())
+    setup(
+        app,
+        Kernel(
+            "tests.fixtures.served_app",
+            env="test",
+            bundles={ServedBundle: {"all": True}, HttpKernelBundle: {"all": True}},
+        ),
+    )
 
     async with app.router.lifespan_context(app):
-        factories = cast("tuple[object, ...]", getattr(app.state, _FACTORIES_KEY))
-        labels = [cast("str", getattr(factory, "label", "")) for factory in factories]
+        stack = cast("MiddlewareStack", getattr(app.state, _STACK_KEY))
+        labels = [factory.label for factory in stack if isinstance(factory, (Stamp, PlainStamp))]
 
     assert labels == ["outer", "plain", "inner"]
-    assert getattr(app.state, _FACTORIES_KEY, None) is None
+    assert getattr(app.state, _STACK_KEY, None) is None
+
+
+async def test_without_the_bundle_requests_run_with_an_empty_stack() -> None:
+    app = FastAPI()
+
+    @app.get("/ping")
+    async def ping() -> dict[str, str]:
+        return {"ping": "pong"}
+
+    # The kernel's report still lists ServedBundle's tagged stamps; only the
+    # http_kernel bundle turns them into a stack, so none of them runs.
+    setup(app, _kernel())
+
+    async with serving(app) as client:
+        stack = cast("MiddlewareStack", getattr(app.state, _STACK_KEY))
+        assert isinstance(stack, MiddlewareStack)
+        assert len(stack) == 0
+        response = await client.get("/ping")
+
+    assert response.status_code == 200
+    assert getattr(app.state, _STACK_KEY, None) is None

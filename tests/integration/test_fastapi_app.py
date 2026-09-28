@@ -24,6 +24,7 @@ from tests.fixtures.served_app.services import Greeter, RequestUnit, Tracked
 from tests.support.bundles import STAMPS_SCOPE_KEY, Channel, ServedBundle
 from tests.support.serving import serving
 from xtr_http_kernel import setup
+from xtr_http_kernel.bundle import HttpKernelBundle
 from xtr_http_kernel.testing import override_services
 
 if TYPE_CHECKING:
@@ -45,10 +46,12 @@ def clear_journals() -> None:
 
 
 def _kernel(*, concurrent_scoped_access: bool = False) -> Kernel:
+    # The http_kernel bundle turns ServedBundle's tagged stamps into the
+    # stack the setup call fetches; without it no contributed middleware runs.
     return Kernel(
         "tests.fixtures.served_app",
         env="test",
-        bundles={ServedBundle: {"all": True}},
+        bundles={ServedBundle: {"all": True}, HttpKernelBundle: {"all": True}},
         concurrent_scoped_access=concurrent_scoped_access,
     )
 

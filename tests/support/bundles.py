@@ -2,8 +2,8 @@
 
 ``ServedBundle`` registers what the fixture application's routes reach for:
 the greeting parameter, a qualified channel, and three middleware factories
-tagged for the setup call to compose — registered lowest priority first, so
-the order the tests observe can only come from sorting.
+tagged for the http_kernel bundle to order — registered lowest tag priority
+first, so the order the tests observe can only come from sorting.
 """
 
 from __future__ import annotations
@@ -36,11 +36,10 @@ def _stamping(label: str, app: ASGIApp) -> ASGIApp:
 
 @final
 class Stamp:
-    """A contributed middleware factory advertising its place with ``priority``."""
+    """A contributed middleware factory; its place comes from its tag's ``priority``."""
 
-    def __init__(self, label: str, priority: int) -> None:
+    def __init__(self, label: str) -> None:
         self.label = label
-        self.priority = priority
 
     def __call__(self, app: ASGIApp) -> ASGIApp:
         return _stamping(self.label, app)
@@ -48,7 +47,7 @@ class Stamp:
 
 @final
 class PlainStamp:
-    """A contributed middleware factory with no ``priority`` — the default 0."""
+    """A contributed middleware factory tagged without a ``priority`` — the default 0."""
 
     label = "plain"
 
@@ -57,11 +56,11 @@ class PlainStamp:
 
 
 def inner_stamp() -> Stamp:
-    return Stamp("inner", priority=-5)
+    return Stamp("inner")
 
 
 def outer_stamp() -> Stamp:
-    return Stamp("outer", priority=10)
+    return Stamp("outer")
 
 
 @final

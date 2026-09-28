@@ -25,6 +25,7 @@ from .event import (
 )
 from .exception import HttpKernelError
 from .kernel_events import KernelEvents
+from .middleware_stack import MiddlewareStack
 from .middleware_tag import MIDDLEWARE_TAG
 from .request_lifecycle_middleware import RequestLifecycleMiddleware
 from .setup import setup
@@ -41,6 +42,7 @@ __all__ = [
     "FinishRequestEvent",
     "HttpKernelError",
     "KernelEvents",
+    "MiddlewareStack",
     "RequestEvent",
     "RequestLifecycleMiddleware",
     "ResponseEvent",

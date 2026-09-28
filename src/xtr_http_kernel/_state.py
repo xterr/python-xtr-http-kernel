@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from typing import Final
 
-__all__ = ["FACTORIES_KEY", "OVERRIDES_KEY"]
+__all__ = ["OVERRIDES_KEY", "STACK_KEY"]
 
-FACTORIES_KEY: Final = "_xtr_http_kernel_middleware"
-"""Where each application life parks the composed chain's factories."""
+STACK_KEY: Final = "_xtr_http_kernel_middleware"
+"""Where each application life parks the kernel's middleware stack."""
 
 OVERRIDES_KEY: Final = "_xtr_http_kernel_overrides"
 """Where :func:`xtr_http_kernel.testing.override_services` parks its mapping."""
