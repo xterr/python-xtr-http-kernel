@@ -16,7 +16,15 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
 
+from .event import (
+    ExceptionEvent,
+    FinishRequestEvent,
+    RequestEvent,
+    ResponseEvent,
+    TerminateEvent,
+)
 from .exception import HttpKernelError
+from .kernel_events import KernelEvents
 
 try:
     __version__ = version("xtr-http-kernel")
@@ -24,4 +32,13 @@ except PackageNotFoundError:  # pragma: no cover
     # Running from a source tree with no installed metadata to read.
     __version__ = "0+unknown"
 
-__all__ = ["HttpKernelError", "__version__"]
+__all__ = [
+    "ExceptionEvent",
+    "FinishRequestEvent",
+    "HttpKernelError",
+    "KernelEvents",
+    "RequestEvent",
+    "ResponseEvent",
+    "TerminateEvent",
+    "__version__",
+]

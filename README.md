@@ -30,9 +30,9 @@ Listeners are services, so they come from the container with everything else the
 - 🪝 **A lifecycle you can join.** Contribute at the request, at the response, at an uncaught
   exception, and once everything has been sent.
 
-> **Early days.** What ships today is the bundle and the package's error base. The lifecycle
-> events, the middleware that dispatches them, `setup(app, kernel)` and the listeners that come
-> with them land on top of this shape.
+> **Early days.** What ships today is the lifecycle's events, the bundle and the package's error
+> base. The middleware that dispatches the events, `setup(app, kernel)` and the listeners that
+> come with them land on top of this shape.
 
 ## Install
 
@@ -101,6 +101,43 @@ def http_kernel() -> HttpKernelConfig:
     return HttpKernelConfig()
 ```
 
+## The lifecycle
+
+Every request goes through the same events, and a listener joins wherever it has something to
+contribute:
+
+| Event | When | What a listener may do |
+|---|---|---|
+| `RequestEvent` | it arrived, nothing has looked at it | read it, or `set_response(...)` to answer instead of the application |
+| `ResponseEvent` | a response is about to start | assign `status_code`, change `headers` in place |
+| `ExceptionEvent` | handling raised, nothing was sent | read `exception`, or `set_response(...)` to answer with it |
+| `FinishRequestEvent` | handling finished — **on every path** | put away what the request set up |
+| `TerminateEvent` | everything was sent | work worth doing once the caller has their answer |
+
+`RequestEvent.set_response` and `ExceptionEvent.set_response` stop the event: the listeners after
+them do not run, because the request has been dealt with. A response is streamed, so
+`ResponseEvent` carries no body — only the head, which has not left yet.
+
+Events are keyed by the qualified name of their class, so a listener declared on a typed
+parameter and one registered under the matching `KernelEvents` constant are the same
+registration:
+
+```python
+from xtr_event_dispatcher import as_event_listener
+
+from xtr_http_kernel import KernelEvents, ResponseEvent
+
+
+# Declared for a container to register, keyed by the annotated event…
+@as_event_listener(priority=100)
+def keep_it_out_of_the_index(event: ResponseEvent) -> None:
+    event.headers["x-robots-tag"] = "noindex"
+
+
+# …or registered by hand, under the same name.
+dispatcher.add_listener(KernelEvents.RESPONSE, keep_it_out_of_the_index, priority=100)
+```
+
 ## Errors
 
 Everything this library raises derives from `HttpKernelError`, and carries what went wrong as
@@ -110,8 +147,10 @@ typed attributes rather than only a message.
 
 ```
 xtr_http_kernel/
-├── exception/   HttpKernelError, the root of everything this library raises
-└── bundle/      HttpKernelBundle for xtr-dependency-injection
+├── event/            the five lifecycle events, one class per file
+├── kernel_events.py  KernelEvents, the name each of them is dispatched under
+├── exception/        HttpKernelError, the root of everything this library raises
+└── bundle/           HttpKernelBundle for xtr-dependency-injection
 ```
 
 ## Development
