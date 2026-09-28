@@ -9,8 +9,9 @@ from typing import TYPE_CHECKING, Final, final
 from starlette.routing import Mount, WebSocketRoute
 
 if TYPE_CHECKING:
-    from fastapi.routing import RouteContext
     from starlette.routing import BaseRoute
+
+    from ._route_contexts import RouteView
 
 __all__ = ["RouteDescription"]
 
@@ -45,24 +46,24 @@ class RouteDescription:
     endpoint: str
 
     @classmethod
-    def of(cls, context: RouteContext) -> RouteDescription:
-        """Describe the route ``context`` stands for."""
-        endpoint = context.endpoint
+    def of(cls, view: RouteView) -> RouteDescription:
+        """Describe the route ``view`` stands for."""
+        endpoint = view.endpoint
         return cls(
-            methods=_methods(context),
-            path=context.path or "",
-            name=context.name or "",
-            endpoint=_qualified(endpoint if endpoint is not None else _carried(context.route)),
+            methods=_methods(view),
+            path=view.path or "",
+            name=view.name or "",
+            endpoint=_qualified(endpoint if endpoint is not None else _carried(view.route)),
         )
 
 
-def _methods(context: RouteContext) -> str:
+def _methods(view: RouteView) -> str:
     """Name the methods the route answers, or else the kind of route it is."""
-    if context.methods:
-        return ", ".join(sorted(context.methods))
-    if isinstance(context.route, WebSocketRoute):
+    if view.methods:
+        return ", ".join(sorted(view.methods))
+    if isinstance(view.route, WebSocketRoute):
         return _WEBSOCKET
-    if isinstance(context.route, Mount):
+    if isinstance(view.route, Mount):
         return _MOUNT
     return _ANY_METHOD
 

@@ -2,40 +2,21 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, cast, final
+from typing import TYPE_CHECKING, cast, final
 
-from fastapi.routing import iter_route_contexts
 from starlette.routing import Match
 from xtr_console import ConsoleStyle, ExitCode, as_command, escape
 
+from ._route_contexts import route_contexts
 from .route_description import RouteDescription
 from .router_command import RouterCommand
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from fastapi.routing import RouteContext
     from starlette.types import Scope
 
 __all__ = ["RouterMatchCommand"]
-
-
-class _Matcher(Protocol):
-    """What a route answers when a request is tried against it."""
-
-    def matches(self, scope: Scope, /) -> tuple[Match, Scope]:
-        """Return how well ``scope`` fits, and what the route reads out of it."""
-        ...
-
-
-def _matcher(context: RouteContext) -> _Matcher:
-    """Read ``context`` as the route it stands in for.
-
-    A context forwards what it is asked for to the route it describes, so it
-    answers ``matches`` without declaring it; the hop through ``object`` is
-    what says the shape is known rather than guessed.
-    """
-    return cast("_Matcher", cast("object", context))
 
 
 @as_command("router:match")
@@ -76,13 +57,13 @@ class RouterMatchCommand(RouterCommand):
         wanted = method.upper()
         scope: Scope = {"type": "http", "method": wanted, "path": path, "root_path": ""}
         refused: RouteDescription | None = None
-        for context in iter_route_contexts(application.routes):
-            match, child_scope = _matcher(context).matches(scope)
+        for view in route_contexts(application.routes):
+            match, child_scope = view.matches(scope)
             if match is Match.FULL:
-                _report(io, RouteDescription.of(context), child_scope)
+                _report(io, RouteDescription.of(view), child_scope)
                 return ExitCode.SUCCESS
             if match is Match.PARTIAL and refused is None:
-                refused = RouteDescription.of(context)
+                refused = RouteDescription.of(view)
         if refused is not None:
             io.error(
                 f'"{escape(path)}" reaches the route "{escape(refused.name)}" '

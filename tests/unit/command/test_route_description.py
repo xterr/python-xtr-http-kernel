@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from fastapi.routing import RouteContext, iter_route_contexts
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
-from starlette.routing import Host, Mount, Route, Router, WebSocketRoute
+from starlette.routing import BaseRoute, Host, Mount, Route, Router, WebSocketRoute
 
 from tests.fixtures.router_app.app import app
+from tests.support.route_listing import lists_included_routers
+from xtr_http_kernel.command._route_contexts import RouteView, route_contexts
 from xtr_http_kernel.command.route_description import RouteDescription
+
+
+def view(route: BaseRoute) -> RouteView:
+    """Read one route the way the commands do."""
+    return route_contexts([route])[0]
 
 
 async def endpoint(request: Request) -> PlainTextResponse:
@@ -30,7 +36,7 @@ class Handler:
 
 
 def test_a_route_is_described_by_its_methods_path_name_and_endpoint() -> None:
-    described = RouteDescription.of(RouteContext(Route("/books/{isbn}", endpoint, methods=["GET"])))
+    described = RouteDescription.of(view(Route("/books/{isbn}", endpoint, methods=["GET"])))
 
     assert described.methods == "GET, HEAD"
     assert described.path == "/books/{isbn}"
@@ -39,20 +45,20 @@ def test_a_route_is_described_by_its_methods_path_name_and_endpoint() -> None:
 
 
 def test_a_route_answering_whatever_arrives_names_no_method() -> None:
-    described = RouteDescription.of(RouteContext(Route("/any", AsgiEndpoint)))
+    described = RouteDescription.of(view(Route("/any", AsgiEndpoint)))
 
     assert described.methods == "-"
     assert described.endpoint == f"{__name__}:AsgiEndpoint"
 
 
 def test_a_bound_method_endpoint_is_named_by_its_class_and_method() -> None:
-    described = RouteDescription.of(RouteContext(Route("/handled", Handler().handle)))
+    described = RouteDescription.of(view(Route("/handled", Handler().handle)))
 
     assert described.endpoint == f"{__name__}:Handler.handle"
 
 
 def test_a_connection_route_is_described_as_one() -> None:
-    described = RouteDescription.of(RouteContext(WebSocketRoute("/live", endpoint, name="live")))
+    described = RouteDescription.of(view(WebSocketRoute("/live", endpoint, name="live")))
 
     assert described.methods == "WEBSOCKET"
     assert described.name == "live"
@@ -60,7 +66,7 @@ def test_a_connection_route_is_described_as_one() -> None:
 
 
 def test_a_mount_is_described_by_the_application_it_carries() -> None:
-    described = RouteDescription.of(RouteContext(Mount("/inner", Router(), name="inner")))
+    described = RouteDescription.of(view(Mount("/inner", Router(), name="inner")))
 
     assert described.methods == "MOUNT"
     assert described.path == "/inner"
@@ -69,7 +75,7 @@ def test_a_mount_is_described_by_the_application_it_carries() -> None:
 
 
 def test_a_route_with_nothing_to_call_is_named_by_itself() -> None:
-    described = RouteDescription.of(RouteContext(Host("books.test", app=Router())))
+    described = RouteDescription.of(view(Host("books.test", app=Router())))
 
     assert described.methods == "-"
     assert described.path == ""
@@ -77,12 +83,11 @@ def test_a_route_with_nothing_to_call_is_named_by_itself() -> None:
     assert described.endpoint == "starlette.routing:Host"
 
 
+@lists_included_routers
 def test_an_application_is_described_route_by_route_with_prefixes_applied() -> None:
     described = {
         description.path: description
-        for description in (
-            RouteDescription.of(context) for context in iter_route_contexts(app.routes)
-        )
+        for description in (RouteDescription.of(read) for read in route_contexts(app.routes))
     }
 
     assert described["/books/{isbn}"].methods == "GET"

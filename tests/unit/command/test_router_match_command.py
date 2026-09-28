@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 from xtr_console import ExitCode
 
+from tests.support.route_listing import lists_included_routers
 from tests.unit.command.conftest import APPLICATION
 from xtr_http_kernel.bundle import HttpKernelConfig
 from xtr_http_kernel.command import RouterMatchCommand
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
 pytestmark = pytest.mark.anyio
 
 
+@lists_included_routers
 async def test_a_matching_path_names_the_route_and_its_parameters(
     tester: ApplicationTester,
 ) -> None:
@@ -82,8 +84,8 @@ async def test_the_configured_application_needs_no_option(
     style, buffer = captured
     command = RouterMatchCommand(HttpKernelConfig(app=APPLICATION))
 
-    assert await command(style, "/books/978") == ExitCode.SUCCESS
-    assert "978" in buffer.getvalue()
+    assert await command(style, "/orders", method="POST") == ExitCode.SUCCESS
+    assert "place_order" in buffer.getvalue()
 
 
 async def test_without_an_application_it_matches_nothing(tester: ApplicationTester) -> None:

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 from xtr_console import ExitCode
 
+from tests.support.route_listing import lists_included_routers
 from tests.unit.command.conftest import APPLICATION
 
 if TYPE_CHECKING:
@@ -21,16 +22,18 @@ async def test_every_route_of_the_application_is_listed(tester: ApplicationTeste
     assert code == ExitCode.SUCCESS
     for expected in ("Methods", "Path", "Name", "Endpoint"):
         assert expected in tester.display
-    assert "/books/{isbn}" in tester.display
-    assert "tests.fixtures.router_app.app:book" in tester.display
+    assert "/orders" in tester.display
+    assert "tests.fixtures.router_app.app:place_order" in tester.display
 
 
+@lists_included_routers
 async def test_an_included_router_is_listed_only_under_its_prefix(
     tester: ApplicationTester,
 ) -> None:
     _ = await tester.execute(["debug:router", "--app", APPLICATION])
 
     assert "/books/{isbn}" in tester.display
+    assert "tests.fixtures.router_app.app:book" in tester.display
     assert "/{isbn}" not in tester.display.replace("/books/{isbn}", "")
 
 

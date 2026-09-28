@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import final
 
-from fastapi.routing import iter_route_contexts
 from xtr_console import ConsoleStyle, ExitCode, as_command, escape
 
+from ._route_contexts import route_contexts
 from .route_description import RouteDescription
 from .router_command import RouterCommand
 
@@ -35,9 +35,7 @@ class DebugRouterCommand(RouterCommand):
         application = self._app_or_report(io, app)
         if application is None:
             return ExitCode.INVALID
-        described = [
-            RouteDescription.of(context) for context in iter_route_contexts(application.routes)
-        ]
+        described = [RouteDescription.of(view) for view in route_contexts(application.routes)]
         io.section(f"Routes ({len(described)})")
         io.table(
             ("Methods", "Path", "Name", "Endpoint"),

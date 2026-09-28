@@ -38,7 +38,7 @@ async def test_the_container_builds_the_listing_command_with_the_configured_appl
 
         assert await command(style) == ExitCode.SUCCESS
 
-    assert "/books/{isbn}" in buffer.getvalue()
+    assert "/orders" in buffer.getvalue()
 
 
 async def test_the_container_builds_the_matching_command_with_the_configured_application() -> None:
@@ -47,9 +47,9 @@ async def test_the_container_builds_the_matching_command_with_the_configured_app
     async with await _kernel().boot() as booted:
         command = await booted.container.get(RouterMatchCommand)
 
-        assert await command(style, "/books/978") == ExitCode.SUCCESS
+        assert await command(style, "/orders", method="POST") == ExitCode.SUCCESS
 
-    assert "978" in buffer.getvalue()
+    assert "place_order" in buffer.getvalue()
 
 
 async def test_without_a_console_the_commands_stay_out_of_the_container(
