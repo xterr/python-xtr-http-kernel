@@ -87,12 +87,12 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
         services: ServiceConfigurator,
         builder: ContainerBuilder,
     ) -> None:
-        """Register the middleware factory and the listeners from ``config``.
+        """Register the middleware factory, the listeners and the commands from ``config``.
 
         The listeners that write to a log join only when the logging bundle
-        is active. The console commands and their module arrive with the
-        router commands; until then a console-only application simply gets
-        no commands from this bundle.
+        is active, and the router commands only when a console bundle is —
+        loading their module late keeps the console dependency out of the
+        graph of an application that never runs one.
         """
         _ = services.set(RequestLifecycleMiddlewareFactory).add_tag(
             MIDDLEWARE_TAG, priority=config.middleware_priority
@@ -139,6 +139,8 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
             _ = services.set(_error_logging_listener(config.log_channel)).add_tag(
                 _LISTENER_TAG, event=ExceptionEvent, method="on_exception"
             )
+        if bundle_active(builder, "console"):
+            services.load("xtr_http_kernel.command")
 
     @override
     def process(self, builder: ContainerBuilder) -> None:
