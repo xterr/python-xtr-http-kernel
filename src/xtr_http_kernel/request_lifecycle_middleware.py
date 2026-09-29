@@ -175,7 +175,13 @@ class RequestLifecycleMiddleware:
             exception_event = ExceptionEvent(lifecycle.request, error)
             _ = await self._dispatcher.dispatch(exception_event)
             answer = exception_event.response
-            if answer is not None and not lifecycle.response_started:
+            # Only a failure is answered: a cancellation, an interrupt or an exit goes on
+            # as it arrived, or timeouts, cancelled tasks and shutdowns would stop working.
+            if (
+                answer is not None
+                and not lifecycle.response_started
+                and isinstance(error, Exception)
+            ):
                 await answer(scope, receive, lifecycle.send)
                 return
             await lifecycle.finish()

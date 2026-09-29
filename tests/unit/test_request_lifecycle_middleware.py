@@ -8,6 +8,7 @@ off a single list.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, TypeVar, cast, final
 
 import pytest
@@ -240,6 +241,31 @@ async def test_an_exception_listener_answer_leaves_instead_of_the_failure() -> N
         "finish_request",
         "sent:body:mended",
         "terminate:503",
+    ]
+
+
+async def test_a_listener_answer_does_not_swallow_a_cancellation() -> None:
+    journal: list[str] = []
+    dispatcher = _journalling_dispatcher(journal)
+
+    async def answer(event: ExceptionEvent) -> None:
+        event.set_response(PlainTextResponse("mended", status_code=503))
+
+    dispatcher.add_listener(ExceptionEvent, answer, priority=-100)
+
+    async def app(_scope: Scope, _receive: Receive, _send: Send) -> None:
+        raise asyncio.CancelledError
+
+    middleware = RequestLifecycleMiddleware(app, dispatcher=dispatcher)
+
+    with pytest.raises(asyncio.CancelledError):
+        await middleware(_http_scope(), _receive, _journalling_send(journal))
+
+    assert journal == [
+        "request",
+        "exception:CancelledError",
+        "finish_request",
+        "terminate:500",
     ]
 
 

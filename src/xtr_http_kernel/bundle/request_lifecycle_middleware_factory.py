@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, final
 
 # Read at runtime: the container fills the constructor from this annotation.
-from xtr_event_dispatcher_contracts import EventDispatcherInterface  # noqa: TC002
+from xtr_event_dispatcher_contracts import EventDispatcherInterface  # noqa: TC002 — read at runtime
 
 from xtr_http_kernel.request_lifecycle_middleware import RequestLifecycleMiddleware
 

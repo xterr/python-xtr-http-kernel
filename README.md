@@ -125,7 +125,7 @@ contribute. Each is dispatched at most once, however the request went:
 |---|---|---|---|
 | `RequestEvent` | `REQUEST` | it arrived, nothing has looked at it | read it, or `set_response(...)` to answer instead of the application |
 | `ResponseEvent` | `RESPONSE` | a response is about to start | assign `status_code`, change `headers` in place |
-| `ExceptionEvent` | `EXCEPTION` | handling raised, nothing was sent | read `exception`, or `set_response(...)` to answer with it |
+| `ExceptionEvent` | `EXCEPTION` | handling raised, nothing was sent | read `exception`, or `set_response(...)` to answer with it — an `Exception` only: a cancellation, interrupt or exit is announced and goes on |
 | `FinishRequestEvent` | `FINISH_REQUEST` | handling finished — **on every path** | put away what the request set up |
 | `TerminateEvent` | `TERMINATE` | everything was sent | work worth doing once the caller has their answer |
 
@@ -320,7 +320,7 @@ default:
 
 The constructor refuses values the lifecycle would silently misread: a `request_id_header` that
 is not an HTTP token, an empty `log_channel`, or an `app` that is not exactly one module and one
-attribute around a single `:`, each raise `ValueError`.
+attribute around a single `:`, each raise `InvalidArgumentError` — also a `ValueError`.
 
 The bundle declares the default `log_channel` on the logging config for you. An application
 renaming it must declare the new channel in its own logging configuration — this bundle's
@@ -429,6 +429,8 @@ async def test_it_uses_the_fake_catalogue() -> None:
 ```
 
 A key is a type, or a `(type, qualifier)` pair for a qualified service.
+The overrides live on the application itself, so two tests serving one application must not
+run at the same time: the block that exits last would restore what the other replaced.
 
 ## Errors
 
@@ -437,6 +439,7 @@ typed attributes rather than only a message.
 
 | Error | Raised when |
 |---|---|
+| `InvalidArgumentError` | an `HttpKernelConfig` field holds a value the lifecycle would misread; also a `ValueError` |
 | `InvalidMiddlewarePriorityError` | a `http_kernel.middleware` tag's `priority` is not an integer |
 
 ## Layout

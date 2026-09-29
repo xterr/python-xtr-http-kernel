@@ -118,7 +118,7 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
         )
         if bundle_active(builder, "logging"):
             # Needs the optional logging extra, which being here proves installed.
-            from xtr_http_kernel.event_listener.log_unit_listener import (  # noqa: PLC0415
+            from xtr_http_kernel.event_listener.log_unit_listener import (  # noqa: PLC0415 — optional extra
                 LogUnitListener,
             )
 

@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass
 from typing import Final
 
+from xtr_http_kernel.exception.invalid_argument_error import InvalidArgumentError
+
 __all__ = ["HttpKernelConfig"]
 
 _HTTP_TOKEN: Final = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
@@ -33,7 +35,7 @@ class HttpKernelConfig:
             load the application from, when they need one.
 
     Raises:
-        ValueError: When ``request_id_header`` is not an HTTP token,
+        InvalidArgumentError: When ``request_id_header`` is not an HTTP token,
             ``log_channel`` is empty, or ``app`` does not hold exactly one
             module and one attribute around a single ``:``.
     """
@@ -51,12 +53,12 @@ class HttpKernelConfig:
             message = (
                 f"request_id_header must be a non-empty HTTP token, not {self.request_id_header!r}"
             )
-            raise ValueError(message)
+            raise InvalidArgumentError(message)
         if not self.log_channel:
             message = "log_channel must not be empty"
-            raise ValueError(message)
+            raise InvalidArgumentError(message)
         if self.app is not None:
             module, separator, attribute = self.app.partition(":")
             if not (module and separator and attribute) or ":" in attribute:
                 message = f'app must read "package.module:app", not {self.app!r}'
-                raise ValueError(message)
+                raise InvalidArgumentError(message)
