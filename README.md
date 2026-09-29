@@ -441,12 +441,12 @@ typed attributes rather than only a message.
 |---|---|
 | `InvalidArgumentError` | an `HttpKernelConfig` field holds a value the lifecycle would misread; also a `ValueError` |
 | `InvalidMiddlewarePriorityError` | a `http_kernel.middleware` tag's `priority` is not an integer |
-
-## Layout
-
 | `InvalidRateLimitError` | a `RateLimited` takes fewer than one token, limits a router that already has routes, or its key function returns no string; also a `ValueError` |
 | `TooManyRequestsError` | a limiter refused the request — a 429 the framework answers, with `Retry-After` |
 | `UnknownRateLimiterError` | a `RateLimited` names a limiter the application did not configure; also a `LookupError` |
+
+## Layout
+
 ```
 xtr_http_kernel/
 ├── setup.py                        setup(app, kernel), the one call an application makes
@@ -457,10 +457,10 @@ xtr_http_kernel/
 ├── request_lifecycle_middleware.py the middleware that dispatches the events
 ├── middleware_stack.py             the ordered chain a bundle contributes to
 ├── middleware_tag.py               MIDDLEWARE_TAG, the tag bundles agree on
+├── rate_limiter/                   RateLimited, with the rate-limiter extra
 ├── command/                        debug:router and router:match
 ├── exception/                      HttpKernelError, the root of everything this library raises
 └── bundle/                         HttpKernelBundle and HttpKernelConfig
-├── rate_limiter/                   RateLimited, with the rate-limiter extra
 ```
 
 ## Development
