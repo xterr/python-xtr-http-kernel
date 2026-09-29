@@ -1,6 +1,6 @@
 [project]
 name = "xtr-http-kernel"
-version = "1.5.0"
+version = "2.0.0"
 description = "Requests turned into responses through events: a request lifecycle for FastAPI applications on the xtr kernel."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,24 +26,24 @@ dependencies = [
     "fastapi>=0.121.3",
     # Imported directly — requests, responses, middleware — not only through fastapi.
     "starlette>=0.40",
-    "xtr-dependency-injection[fastapi]>=1.0,<2",
-    "xtr-event-dispatcher>=1.0,<2",
-    "xtr-event-dispatcher-contracts>=1.0,<2",
-    "xtr-logging-contracts>=1.0,<2",
-    "xtr-service-contracts>=1.0,<2",
+    "xtr-dependency-injection[fastapi]>=2.0,<3",
+    "xtr-event-dispatcher>=2.0,<3",
+    "xtr-event-dispatcher-contracts>=2.0,<3",
+    "xtr-logging-contracts>=2.0,<3",
+    "xtr-service-contracts>=2.0,<3",
     "typing-extensions>=4.4",
 ]
 
 [project.optional-dependencies]
 logging = [
-    "xtr-logging>=1.0,<2",
+    "xtr-logging>=2.0,<3",
 ]
 console = [
-    "xtr-console>=1.0,<2",
+    "xtr-console>=2.0,<3",
 ]
 rate-limiter = [
-    "xtr-clock>=1.0,<2",
-    "xtr-rate-limiter[di]>=1.0,<2",
+    "xtr-clock>=2.0,<3",
+    "xtr-rate-limiter[di]>=2.0,<3",
 ]
 
 # Advertises the bundle so debug:bundles can name it when installed but not listed.
@@ -59,10 +59,10 @@ dev = [
     "pytest-cov>=5",
     "anyio>=4.0",
     "ty>=0.0.83",
-    "xtr-logging>=1.0,<2",
-    "xtr-console>=1.0,<2",
-    "xtr-clock>=1.0,<2",
-    "xtr-rate-limiter[di]>=1.0,<2",
+    "xtr-logging>=2.0,<3",
+    "xtr-console>=2.0,<3",
+    "xtr-clock>=2.0,<3",
+    "xtr-rate-limiter[di]>=2.0,<3",
     # Requests are driven straight at the application through an ASGI
     # transport, so the suite never binds a socket.
     "httpx>=0.27",
