@@ -41,6 +41,10 @@ logging = [
 console = [
     "xtr-console>=1.0,<2",
 ]
+rate-limiter = [
+    "xtr-clock>=1.0,<2",
+    "xtr-rate-limiter[di]>=1.0,<2",
+]
 
 # Advertises the bundle so debug:bundles can name it when installed but not listed.
 # Advertising activates nothing: an application lists the bundles it wants.
@@ -57,6 +61,8 @@ dev = [
     "ty>=0.0.83",
     "xtr-logging>=1.0,<2",
     "xtr-console>=1.0,<2",
+    "xtr-clock>=1.0,<2",
+    "xtr-rate-limiter[di]>=1.0,<2",
     # Requests are driven straight at the application through an ASGI
     # transport, so the suite never binds a socket.
     "httpx>=0.27",

@@ -38,6 +38,7 @@ Listeners are services, so they come from the container with everything else the
 uv add xtr-http-kernel                      # the lifecycle, its bundle and setup
 uv add "xtr-http-kernel[logging]"           # + the listeners that log
 uv add "xtr-http-kernel[console]"           # + the commands that report on the router
+uv add "xtr-http-kernel[rate-limiter]"      # + rate limits on routes, routers and the app
 ```
 
 Requires Python 3.11+. The web framework and the container layer come with the package
@@ -194,10 +195,86 @@ The bundle registers these; which ones depend on what is installed and active:
 | `DisallowRobotsIndexingListener` | `ResponseEvent` | always | stamps `X-Robots-Tag: noindex` on every response, when the config turns it on |
 | `LogUnitListener` | `RequestEvent`, `TerminateEvent` | logging bundle active | opens a [logging unit of work](../xtr-logging#units-of-work) per request and closes it once all was sent |
 | `ErrorLoggingListener` | `ExceptionEvent` | logging bundle active | writes every uncaught exception to the request channel — `error` below a 500 status, `critical` otherwise — leaving the response to whoever answers it |
+| `RateLimitHeadersListener` | `ResponseEvent` | rate limiter bundle active | writes the `X-RateLimit-*` headers of the [rate limit](#rate-limits) that speaks for the response, and makes it private |
 
 The two logging listeners join only when the logging bundle is active, and open and close the
 unit of work outside everything else so every record made while handling carries the request's
 id. The request id settles right after the unit opens, for the same reason.
+
+## Rate limits
+
+With the `rate-limiter` extra, a route, a router or the whole application can be held to a
+limiter configured in [xtr-rate-limiter](../xtr-rate-limiter)'s bundle. `RateLimited` is one
+declaration, written as a decorator or wherever the framework takes a dependency:
+
+```python
+from fastapi import APIRouter, FastAPI, Request
+
+from xtr_http_kernel.rate_limiter import RateLimited
+
+app = FastAPI(dependencies=[RateLimited("global")])  # every route
+
+
+@app.get("/books")
+@RateLimited("api", expose_headers=True)  # below the route decorator
+async def list_books() -> list[Book]: ...
+
+
+def by_username(request: Request) -> str:
+    return request.headers.get("x-username", "anonymous")
+
+
+@app.post("/login", dependencies=[RateLimited("login", key=by_username, methods="post")])
+async def login() -> None: ...
+
+
+reports = RateLimited("reports")(APIRouter(prefix="/reports"))  # before its routes
+app.include_router(admin, dependencies=[RateLimited("admin")])  # or when included
+```
+
+- **Where it runs.** After routing and before the endpoint: routing is the framework's, so the
+  limit is a dependency rather than a lifecycle listener, and runs in the framework's order —
+  the application's, the routers', then the route's. As a decorator it must sit **below** the
+  route decorator, which reads the endpoint when the route is declared; a router must be
+  limited **before** routes are added, since each route copies its router's dependencies.
+- **What a request is counted under.** `key` is a string, or a function of the request —
+  awaited when it returns an awaitable. By default: the client's address, the method and the
+  route's path template — `/books/{isbn}`, so asking for another book never earns a fresh
+  limit. Behind a proxy the address is the proxy's unless the server trusts its forwarded
+  headers (uvicorn's `--forwarded-allow-ips`).
+- **`tokens`** a request consumes, and **`methods`** limited — every one when empty; `GET` also
+  limits `HEAD`.
+- **A refusal** is answered `429 Too Many Requests` with `Retry-After`, raised as
+  `TooManyRequestsError` — the framework's own HTTP exception, so an exception handler
+  registered for it reshapes the body. A `RateLimitExceededEvent` naming the limiter and the key
+  is dispatched first. Limits consulted before a refusal keep their spend.
+- **Headers.** With `expose_headers=True` the response carries `X-RateLimit-Limit`,
+  `X-RateLimit-Remaining` and `X-RateLimit-Reset`, in calls rather than tokens, for the limit
+  closest to refusing among those exposing theirs; a refusing limit always speaks, and one that
+  keeps its state to itself leaves the response without them. The response is made private, so
+  a shared cache never serves one caller's count to another.
+- **The published schema** is untouched: the limit never appears as a parameter.
+
+A limiter the application did not configure fails the request with `UnknownRateLimiterError`,
+naming the ones it did. To limit by hand — throttling logins only on failure, say — inject the
+limiter by name like any service:
+
+```python
+from typing import Annotated
+
+from xtr_dependency_injection import Target
+from xtr_rate_limiter import RateLimiterFactoryInterface
+
+
+@app.post("/login")
+async def login(
+    limiter: Annotated[RateLimiterFactoryInterface, Target("login")],
+) -> None:
+    limit = limiter.create(username)
+    if not (await limit.consume(0)).is_accepted():
+        raise TooManyAttempts
+    ...
+```
 
 ## Use in an application
 
@@ -206,13 +283,13 @@ Everything adding this package to an application on
 removing it undoes.
 
 - **Install** — `uv add "xtr-http-kernel[logging,console]"`; `logging` brings the listeners
-  that write to a log, `console` the commands that report on the router. Neither is needed to
-  serve requests.
+  that write to a log, `console` the commands that report on the router, `rate-limiter` the
+  [rate limits](#rate-limits). None is needed to serve requests.
 - **Activate** — `HttpKernelBundle: {"all": True}` in `BUNDLES` in `<app>/bundles.py`, imported
   from `xtr_http_kernel.bundle`. Then call `setup(app, kernel)` where the application is built.
 - **Brings along** — the [event dispatcher](../xtr-event-dispatcher) bundle always, because the
-  lifecycle dispatches through it; the [logging](../xtr-logging) and [console](../xtr-console)
-  bundles whenever those packages are *installed* — they are required peers, pulled in and made
+  lifecycle dispatches through it; the [logging](../xtr-logging), [console](../xtr-console) and
+  [rate limiter](../xtr-rate-limiter) bundles whenever those packages are *installed* — they are required peers, pulled in and made
   active without being listed, and left out silently when the package is not installed. Listing
   is not what activates them; installing the extra is.
 - **Configure** — nothing is required: the zero-config path gives a `uuid4` request id under
@@ -364,6 +441,9 @@ typed attributes rather than only a message.
 
 ## Layout
 
+| `InvalidRateLimitError` | a `RateLimited` takes fewer than one token, limits a router that already has routes, or its key function returns no string; also a `ValueError` |
+| `TooManyRequestsError` | a limiter refused the request — a 429 the framework answers, with `Retry-After` |
+| `UnknownRateLimiterError` | a `RateLimited` names a limiter the application did not configure; also a `LookupError` |
 ```
 xtr_http_kernel/
 ├── setup.py                        setup(app, kernel), the one call an application makes
@@ -377,6 +457,7 @@ xtr_http_kernel/
 ├── command/                        debug:router and router:match
 ├── exception/                      HttpKernelError, the root of everything this library raises
 └── bundle/                         HttpKernelBundle and HttpKernelConfig
+├── rate_limiter/                   RateLimited, with the rate-limiter extra
 ```
 
 ## Development

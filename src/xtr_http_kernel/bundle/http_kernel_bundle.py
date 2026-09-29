@@ -65,6 +65,7 @@ _UNIT_CLOSE_PRIORITY: Final = -8192
 @required_bundle(EventDispatcherBundle)
 @required_bundle("xtr_logging.bundle:LoggingBundle", ignore_on_invalid=True)
 @required_bundle("xtr_console.bundle:ConsoleBundle", ignore_on_invalid=True)
+@required_bundle("xtr_rate_limiter.bundle:RateLimiterBundle", ignore_on_invalid=True)
 @as_bundle("http_kernel", config=HttpKernelConfig)
 class HttpKernelBundle(Bundle[HttpKernelConfig]):
     """Puts the request lifecycle's services under the container."""
@@ -138,6 +139,15 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
             )
             _ = services.set(_error_logging_listener(config.log_channel)).add_tag(
                 _LISTENER_TAG, event=ExceptionEvent, method="on_exception"
+            )
+        if bundle_active(builder, "rate_limiter"):
+            # Reads what the rate-limit dependency leaves on a request; the extra is installed.
+            from xtr_http_kernel.event_listener.rate_limit_headers_listener import (  # noqa: PLC0415
+                RateLimitHeadersListener,
+            )
+
+            _ = services.set(RateLimitHeadersListener).add_tag(
+                _LISTENER_TAG, event=ResponseEvent, method="on_response"
             )
         if bundle_active(builder, "console"):
             services.load("xtr_http_kernel.command")
