@@ -22,7 +22,7 @@ from xtr_dependency_injection import (
     bundle_active,
     required_bundle,
 )
-from xtr_event_dispatcher.bundle import EventDispatcherBundle
+from xtr_event_dispatcher.bundle import LISTENER_TAG, EventDispatcherBundle
 
 # Read at runtime: the container fills factory parameters from annotations.
 from xtr_logging_contracts import LoggerInterface
@@ -49,9 +49,6 @@ if TYPE_CHECKING:
     from xtr_http_kernel.middleware_stack import MiddlewareFactory
 
 __all__ = ["HttpKernelBundle"]
-
-_LISTENER_TAG: Final = "event_dispatcher.listener"
-"""The tag the event dispatcher bundle reads listeners from."""
 
 # The unit of work opens before anything else contributes and closes after
 # everything else has heard the terminate; the request id settles right after
@@ -104,17 +101,17 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
             .set_argument("header", config.request_id_header)
             .set_argument("trust_incoming", config.trust_request_id)
             .add_tag(
-                _LISTENER_TAG,
+                LISTENER_TAG,
                 event=RequestEvent,
                 method="on_request",
                 priority=_REQUEST_ID_PRIORITY,
             )
-            .add_tag(_LISTENER_TAG, event=ResponseEvent, method="on_response")
+            .add_tag(LISTENER_TAG, event=ResponseEvent, method="on_response")
         )
         _ = (
             services.set(DisallowRobotsIndexingListener)
             .set_argument("enabled", config.disallow_search_indexing)
-            .add_tag(_LISTENER_TAG, event=ResponseEvent, method="on_response")
+            .add_tag(LISTENER_TAG, event=ResponseEvent, method="on_response")
         )
         if bundle_active(builder, "logging"):
             # Needs the optional logging extra, which being here proves installed.
@@ -125,20 +122,20 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
             _ = (
                 services.set(LogUnitListener)
                 .add_tag(
-                    _LISTENER_TAG,
+                    LISTENER_TAG,
                     event=RequestEvent,
                     method="on_request",
                     priority=_UNIT_OPEN_PRIORITY,
                 )
                 .add_tag(
-                    _LISTENER_TAG,
+                    LISTENER_TAG,
                     event=TerminateEvent,
                     method="on_terminate",
                     priority=_UNIT_CLOSE_PRIORITY,
                 )
             )
             _ = services.set(_error_logging_listener(config.log_channel)).add_tag(
-                _LISTENER_TAG, event=ExceptionEvent, method="on_exception"
+                LISTENER_TAG, event=ExceptionEvent, method="on_exception"
             )
         if bundle_active(builder, "rate_limiter"):
             # Reads what the rate-limit dependency leaves on a request; the extra is installed.
@@ -147,7 +144,7 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
             )
 
             _ = services.set(RateLimitHeadersListener).add_tag(
-                _LISTENER_TAG, event=ResponseEvent, method="on_response"
+                LISTENER_TAG, event=ResponseEvent, method="on_response"
             )
         if bundle_active(builder, "console"):
             services.load("xtr_http_kernel.command")
