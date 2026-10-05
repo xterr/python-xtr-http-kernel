@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from xtr_dependency_injection import as_service, configure
 from xtr_logging import HandlerInterface, LoggingConfig, TestHandler
-from xtr_logging.config import ContextVarsProcessorSpec, ServiceHandlerSpec
+from xtr_logging.config import ContextVarsProcessorConfig, ServiceHandlerConfig
 
 CAPTURED: list[TestHandler] = []
 """Every capture handler built, newest last."""
@@ -17,8 +17,8 @@ CAPTURED: list[TestHandler] = []
 @configure
 def logging_config() -> LoggingConfig:
     return LoggingConfig(
-        handlers={"capture": ServiceHandlerSpec(id="capture")},
-        processors=(ContextVarsProcessorSpec(),),
+        handlers={"capture": ServiceHandlerConfig(id="capture")},
+        processors=(ContextVarsProcessorConfig(),),
     )
 
 

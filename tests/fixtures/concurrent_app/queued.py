@@ -11,11 +11,11 @@ from __future__ import annotations
 from xtr_dependency_injection import configure
 from xtr_logging import LoggingConfig
 from xtr_logging.config import (
-    ContextVarsProcessorSpec,
-    FingersCrossedHandlerSpec,
-    QueueHandlerSpec,
-    ServiceHandlerSpec,
-    ServiceProcessorSpec,
+    ContextVarsProcessorConfig,
+    FingersCrossedHandlerConfig,
+    QueueHandlerConfig,
+    ServiceHandlerConfig,
+    ServiceProcessorConfig,
 )
 
 
@@ -23,13 +23,13 @@ from xtr_logging.config import (
 def logging_config() -> LoggingConfig:
     return LoggingConfig(
         handlers={
-            "gate": QueueHandlerSpec(handler="hold"),
-            "hold": FingersCrossedHandlerSpec(
+            "gate": QueueHandlerConfig(handler="hold"),
+            "hold": FingersCrossedHandlerConfig(
                 action_level="warning",
                 handler="collect",
                 passthru_level="warning",
             ),
-            "collect": ServiceHandlerSpec(id="collect"),
+            "collect": ServiceHandlerConfig(id="collect"),
         },
-        processors=(ServiceProcessorSpec(id="uid"), ContextVarsProcessorSpec()),
+        processors=(ServiceProcessorConfig(id="uid"), ContextVarsProcessorConfig()),
     )
