@@ -285,6 +285,9 @@ removing it undoes.
 - **Install** — `uv add "xtr-http-kernel[logging,console]"`; `logging` brings the listeners
   that write to a log, `console` the commands that report on the router, `rate-limiter` the
   [rate limits](#rate-limits). None is needed to serve requests.
+- **Recipe** — `uv run xtr-recipes recipes:sync` does the *Activate* step below: it lists
+  `HttpKernelBundle`. There is no config file, environment or ignore line to write; it prints the
+  `setup(app, kernel)` step, which a recipe cannot make for you.
 - **Activate** — `HttpKernelBundle: {"all": True}` in `BUNDLES` in `<app>/bundles.py`, imported
   from `xtr_http_kernel.bundle`. Then call `setup(app, kernel)` where the application is built.
 - **Brings along** — the [event dispatcher](../xtr-event-dispatcher) bundle always, because the

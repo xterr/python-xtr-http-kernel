@@ -1,0 +1,24 @@
+# The recipe for xtr-http-kernel: what *Use in an application* in the README
+# takes, as data. Keep the two in step — the README is the source.
+
+[bundles]
+# "<module>:<class>" = the environments it is listed with, exactly as in BUNDLES.
+"xtr_http_kernel.bundle:HttpKernelBundle" = { all = true }
+
+# No [files]: nothing is required. With no configuration a request gets a uuid4
+# id under X-Request-Id, no robots header, and the "request" log channel; an
+# application changing any of that writes config/http_kernel.py itself.
+
+# No [env], and nothing to ignore.
+
+[gitignore]
+lines = []
+
+[notes]
+steps = [
+  "Call setup(app, kernel) where the application is built: the lifecycle reaches a request through it.",
+]
+check = [
+  "<script> debug:bundles — http_kernel is listed and active, event_dispatcher required",
+  "<script> debug:router — the application's routes",
+]

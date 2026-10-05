@@ -204,6 +204,10 @@ tests serving one application must not run at the same time.
 
 ## Use in an application
 
+`uv run xtr-recipes recipes:sync` applies the recipe shipped with this package: it lists
+`HttpKernelBundle`. That is the steps below a recipe can do; the `setup(app, kernel)` step it prints
+for you to make.
+
 1. **Install** `uv add "xtr-http-kernel[logging,console]"`. The extras: `logging` adds the
    listeners that write to a log, `console` the router commands, `rate-limiter` the rate limits.
    None is needed to serve requests.
