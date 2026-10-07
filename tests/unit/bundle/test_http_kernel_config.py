@@ -12,7 +12,7 @@ def test_it_builds_with_no_arguments() -> None:
     config = HttpKernelConfig()
 
     assert config.request_id_header == "X-Request-Id"
-    assert config.trust_request_id is True
+    assert config.trust_request_id is False
     assert config.disallow_search_indexing is False
     assert config.log_channel == "request"
     assert config.middleware_priority == 0

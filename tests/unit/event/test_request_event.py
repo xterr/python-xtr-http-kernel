@@ -18,7 +18,6 @@ def test_it_carries_the_request_it_was_built_from(http_request: Request) -> None
 def test_a_request_nobody_answered_carries_no_response(http_request: Request) -> None:
     event = RequestEvent(http_request)
 
-    assert event.has_response() is False
     assert event.response is None
     assert event.is_propagation_stopped() is False
 
@@ -29,7 +28,6 @@ def test_answering_the_request_stops_the_listeners_after_it(http_request: Reques
 
     event.set_response(response)
 
-    assert event.has_response() is True
     assert event.response is response
     assert event.is_propagation_stopped() is True
 

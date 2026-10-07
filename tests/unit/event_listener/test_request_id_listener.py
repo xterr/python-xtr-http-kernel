@@ -46,7 +46,7 @@ def _request(request_id: str | None = None) -> Request:
 
 
 def test_a_valid_incoming_id_is_kept_when_trusted() -> None:
-    listener = RequestIdListener()
+    listener = RequestIdListener(trust_incoming=True)
     event = RequestEvent(_request("trace-1.A_b"))
 
     listener.on_request(event)
@@ -65,7 +65,7 @@ def test_a_missing_id_is_generated() -> None:
 
 @pytest.mark.parametrize("sent", ["bad id!", "", "a" * 201, "ünicode"])
 def test_an_invalid_incoming_id_is_replaced(sent: str) -> None:
-    listener = RequestIdListener()
+    listener = RequestIdListener(trust_incoming=True)
     event = RequestEvent(_request(sent.encode("latin-1", "replace").decode("latin-1")))
 
     listener.on_request(event)
@@ -74,8 +74,8 @@ def test_an_invalid_incoming_id_is_replaced(sent: str) -> None:
     assert HEX_32.match(_settled_id(event.request))
 
 
-def test_a_valid_incoming_id_is_replaced_when_not_trusted() -> None:
-    listener = RequestIdListener(trust_incoming=False)
+def test_a_valid_incoming_id_is_replaced_unless_it_is_trusted() -> None:
+    listener = RequestIdListener()
     event = RequestEvent(_request("trace-1"))
 
     listener.on_request(event)
@@ -85,7 +85,7 @@ def test_a_valid_incoming_id_is_replaced_when_not_trusted() -> None:
 
 
 def test_a_custom_header_is_read() -> None:
-    listener = RequestIdListener(header="X-Trace-Id")
+    listener = RequestIdListener(header="X-Trace-Id", trust_incoming=True)
     request = Request(
         {
             "type": "http",
@@ -104,7 +104,7 @@ def test_a_custom_header_is_read() -> None:
 
 
 def test_the_id_is_bound_to_the_log_context() -> None:
-    listener = RequestIdListener()
+    listener = RequestIdListener(trust_incoming=True)
     event = RequestEvent(_request("trace-ctx"))
 
     listener.on_request(event)
@@ -113,7 +113,7 @@ def test_the_id_is_bound_to_the_log_context() -> None:
 
 
 def test_the_response_echoes_the_request_id() -> None:
-    listener = RequestIdListener()
+    listener = RequestIdListener(trust_incoming=True)
     request = _request("trace-1")
     listener.on_request(RequestEvent(request))
     headers = MutableHeaders()

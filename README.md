@@ -185,16 +185,22 @@ a `finally`: the engine throws a scope's error into the generator, so a commit t
 raises there, and — with the logging listeners active — that failure is written to the log
 against the request that caused it, like any other uncaught exception.
 
+Nothing else is reset between requests. A service built for the application's life is shared
+by every request, including the ones in flight at the same time, so the lifecycle clears no
+state when a request begins or ends: a reset would wipe what a concurrent request is halfway
+through. A service that must not outlive one request says so with `lifetime="scoped"`, and one
+that remembers something per caller keys it by the caller instead of holding only the last.
+
 ## Listeners shipped
 
 The bundle registers these; which ones depend on what is installed and active:
 
 | Listener | Events | Active when | Does |
 |---|---|---|---|
-| `RequestIdListener` | `RequestEvent`, `ResponseEvent` | always | keeps a trusted incoming id or mints a `uuid4().hex`, puts it on `request.state.request_id`, binds it to the log context when logging is around, and echoes it on the response |
+| `RequestIdListener` | `RequestEvent`, `ResponseEvent` | always | mints a `uuid4().hex` — or keeps a well-formed incoming id, where `trust_request_id` says to — puts it on `request.state.request_id`, binds it to the log context when logging is around, and echoes it on the response |
 | `DisallowRobotsIndexingListener` | `ResponseEvent` | always | stamps `X-Robots-Tag: noindex` on every response, when the config turns it on |
 | `LogUnitListener` | `RequestEvent`, `TerminateEvent` | logging bundle active | opens a [logging unit of work](../xtr-logging#units-of-work) per request and closes it once all was sent |
-| `ErrorLoggingListener` | `ExceptionEvent` | logging bundle active | writes every uncaught exception to the request channel — `error` below a 500 status, `critical` otherwise — leaving the response to whoever answers it |
+| `ErrorLoggingListener` | `ExceptionEvent` | logging bundle active | writes every uncaught exception to the request channel — `info` for a cancellation, an interrupt or an exit, `error` below a 500 status, `critical` otherwise — leaving the response to whoever answers it |
 | `RateLimitHeadersListener` | `ResponseEvent` | rate limiter bundle active | writes the `X-RateLimit-*` headers of the [rate limit](#rate-limits) that speaks for the response, and makes it private |
 
 The two logging listeners join only when the logging bundle is active, and open and close the
@@ -295,8 +301,9 @@ removing it undoes.
   [rate limiter](../xtr-rate-limiter) bundles whenever those packages are *installed* — they are required peers, pulled in and made
   active without being listed, and left out silently when the package is not installed. Listing
   is not what activates them; installing the extra is.
-- **Configure** — nothing is required: the zero-config path gives a `uuid4` request id under
-  `X-Request-Id`, no robots header, and the `request` log channel. A
+- **Configure** — nothing is required: the zero-config path gives every request a fresh `uuid4`
+  id under `X-Request-Id` — an inbound one is not trusted — no robots header, and the `request`
+  log channel. A
   `<app>/config/http_kernel.py` `@configure` function returning an `HttpKernelConfig` changes
   that — see [Configure](#configure) and [Kernel / bundle](#kernel--bundle).
 - **Environment** — nothing.
@@ -315,7 +322,7 @@ default:
 | Field | Default | What it sets |
 |---|---|---|
 | `request_id_header` | `"X-Request-Id"` | the header the id is read from and echoed on; must be a non-empty HTTP token |
-| `trust_request_id` | `True` | keep a well-formed incoming id; `False` mints a fresh one every request |
+| `trust_request_id` | `False` | mint a fresh id every request; `True` keeps a well-formed incoming one |
 | `disallow_search_indexing` | `False` | mark every response `X-Robots-Tag: noindex` |
 | `log_channel` | `"request"` | the channel the error listener writes to |
 | `middleware_priority` | `0` | where the lifecycle middleware sits among the contributed factories — highest outermost |
@@ -324,6 +331,15 @@ default:
 The constructor refuses values the lifecycle would silently misread: a `request_id_header` that
 is not an HTTP token, an empty `log_channel`, or an `app` that is not exactly one module and one
 attribute around a single `:`, each raise `InvalidArgumentError` — also a `ValueError`.
+
+`trust_request_id` has one prerequisite: a proxy you control in front of the application, which
+sets `request_id_header` itself and strips whatever the caller sent. Reached directly, the
+caller chooses the id, so it can give two requests the same one — mixing their log records on
+purpose, and making the one id an auditor follows useless. Without that proxy leave it off: the
+minted id still travels on `request.state.request_id`, on every log record made while handling,
+and out on the response, so a caller quoting the response's id names exactly one request. A
+caller with its own trace id of a wider system sends it under a header of its own, which an
+application reads like any other.
 
 The bundle declares the default `log_channel` on the logging config for you. An application
 renaming it must declare the new channel in its own logging configuration — this bundle's
@@ -438,7 +454,8 @@ run at the same time: the block that exits last would restore what the other rep
 ## Errors
 
 Everything this library raises derives from `HttpKernelError`, and carries what went wrong as
-typed attributes rather than only a message.
+typed attributes rather than only a message. All of them are importable from `xtr_http_kernel`
+itself, as well as from `xtr_http_kernel.exception`.
 
 | Error | Raised when |
 |---|---|
@@ -484,5 +501,3 @@ uv run pytest
 ## License
 
 MIT — see [LICENSE](LICENSE).
-</content>
-</invoke>

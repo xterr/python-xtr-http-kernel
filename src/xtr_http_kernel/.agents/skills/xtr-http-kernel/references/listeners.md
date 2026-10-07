@@ -5,10 +5,10 @@ bundle registers them.
 
 | Listener | Events | Active when | Does |
 | --- | --- | --- | --- |
-| `RequestIdListener` | `RequestEvent`, `ResponseEvent` | always | keeps a trusted incoming id or mints a `uuid4().hex`, puts it on `request.state.request_id`, binds it to the log context when logging is around, and echoes it on the response under `request_id_header` |
+| `RequestIdListener` | `RequestEvent`, `ResponseEvent` | always | mints a `uuid4().hex` — or keeps a well-formed incoming id, where `trust_request_id` says to — puts it on `request.state.request_id`, binds it to the log context when logging is around, and echoes it on the response under `request_id_header` |
 | `DisallowRobotsIndexingListener` | `ResponseEvent` | always | stamps `X-Robots-Tag: noindex` on every response, when `disallow_search_indexing` turns it on |
 | `LogUnitListener` | `RequestEvent`, `TerminateEvent` | logging bundle active | opens a logging unit of work per request and closes it once all was sent |
-| `ErrorLoggingListener` | `ExceptionEvent` | logging bundle active | writes every uncaught exception to `log_channel`, at `error` below a 500 status and `critical` otherwise, leaving the response to whoever answers it |
+| `ErrorLoggingListener` | `ExceptionEvent` | logging bundle active | writes every uncaught exception to `log_channel`, at `info` for a cancellation, an interrupt or an exit, `error` below a 500 status and `critical` otherwise, leaving the response to whoever answers it |
 | `RateLimitHeadersListener` | `ResponseEvent` | rate limiter bundle active | writes the `X-RateLimit-*` headers of the limit that speaks for the response, and makes the response private |
 
 The two logging listeners open and close the unit of work outside everything else, so every
@@ -24,4 +24,5 @@ What this means for application code:
   again.
 - To keep every page out of a search index, set `disallow_search_indexing=True` rather than
   writing a `ResponseEvent` listener.
-- To stop trusting an inbound id (a public edge), set `trust_request_id=False`.
+- An inbound id is not trusted: every request gets a fresh one. Set `trust_request_id=True`
+  only behind a proxy you control that sets the header itself and strips the caller's.

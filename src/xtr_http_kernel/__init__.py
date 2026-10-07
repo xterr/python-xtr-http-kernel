@@ -23,7 +23,14 @@ from .event import (
     ResponseEvent,
     TerminateEvent,
 )
-from .exception import HttpKernelError
+from .exception import (
+    HttpKernelError,
+    InvalidArgumentError,
+    InvalidMiddlewarePriorityError,
+    InvalidRateLimitError,
+    TooManyRequestsError,
+    UnknownRateLimiterError,
+)
 from .kernel_events import KernelEvents
 from .middleware_stack import MiddlewareStack
 from .middleware_tag import MIDDLEWARE_TAG
@@ -41,12 +48,17 @@ __all__ = [
     "ExceptionEvent",
     "FinishRequestEvent",
     "HttpKernelError",
+    "InvalidArgumentError",
+    "InvalidMiddlewarePriorityError",
+    "InvalidRateLimitError",
     "KernelEvents",
     "MiddlewareStack",
     "RequestEvent",
     "RequestLifecycleMiddleware",
     "ResponseEvent",
     "TerminateEvent",
+    "TooManyRequestsError",
+    "UnknownRateLimiterError",
     "__version__",
     "setup",
 ]

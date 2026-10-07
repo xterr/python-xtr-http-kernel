@@ -32,11 +32,14 @@ except ImportError:  # pragma: no cover — exercised only without the logging e
 class RequestIdListener:
     """Keeps, or mints, one id per request, and echoes it on the response.
 
-    At the request: a well-formed incoming header is kept when trusted,
-    anything else is replaced with a fresh ``uuid4().hex``. The id is put on
-    ``request.state.request_id`` for whoever handles the request, and bound
-    to the ambient log context when the logging package is around, so every
-    record made while handling carries it.
+    At the request: an incoming header is replaced with a fresh
+    ``uuid4().hex`` unless the listener was told to trust it and it is
+    well-formed. Trust is off by default, because a caller choosing its own
+    id can collide two requests' log records on purpose; turn it on only
+    where a proxy you control sets the header and strips what the caller
+    sent. The id is put on ``request.state.request_id`` for whoever handles
+    the request, and bound to the ambient log context when the logging
+    package is around, so every record made while handling carries it.
 
     At the response: the id goes out under the same header, so the caller
     can quote it back.
@@ -44,7 +47,7 @@ class RequestIdListener:
 
     __slots__ = ("_header", "_trust_incoming")
 
-    def __init__(self, header: str = "X-Request-Id", trust_incoming: bool = True) -> None:
+    def __init__(self, header: str = "X-Request-Id", trust_incoming: bool = False) -> None:
         """Read and write ``header``, keeping a valid incoming id when ``trust_incoming``."""
         self._header = header
         self._trust_incoming = trust_incoming

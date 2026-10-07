@@ -19,7 +19,8 @@ signatures. Everything the framework already does well is left alone.
 - Join the lifecycle with `@as_event_listener()` from `xtr_event_dispatcher` on a function
   taking one of `RequestEvent`, `ResponseEvent`, `ExceptionEvent`, `FinishRequestEvent`,
   `TerminateEvent`.
-- Every response carries `X-Request-Id`; `request.state.request_id` holds the same value.
+- Every response carries a freshly minted `X-Request-Id`; `request.state.request_id` holds the
+  same value. An inbound id is ignored unless `trust_request_id=True`.
 - Test with `httpx.ASGITransport` inside `app.router.lifespan_context(app)`, never
   `TestClient`. Swap services with `override_services` from `xtr_http_kernel.testing`.
 - Activate `HttpKernelBundle` from `xtr_http_kernel.bundle`; configure with `HttpKernelConfig`.
@@ -135,6 +136,10 @@ logging unit, an uncaught exception written to the log, a noindex header and the
 `X-RateLimit-*` headers are all already done: configure them rather than writing your own. See
 [references/listeners.md](references/listeners.md) for what each one does.
 
+An uncaught exception is logged at `critical`, at `error` when it carries a `status_code` below
+500, and at `info` when it is a cancellation, an interrupt or an exit — those say a timeout, a
+gone caller or a shutdown reached the lifecycle, not that anything is broken.
+
 ## Rate limits
 
 With the `rate-limiter` extra, `RateLimited` holds a route, a router or the whole application to
@@ -216,8 +221,8 @@ for you to make.
 3. **Brings along** the event dispatcher bundle always; the logging, console and rate limiter
    bundles whenever those packages are installed. Installing the extra is what activates them,
    not listing.
-4. **Configure** nothing by default: a `uuid4` id under `X-Request-Id`, no robots header, the
-   `request` log channel.
+4. **Configure** nothing by default: a fresh `uuid4` id under `X-Request-Id` per request (an
+   inbound one is not trusted), no robots header, the `request` log channel.
 
    ```python
    # <app>/config/http_kernel.py
@@ -244,7 +249,8 @@ for you to make.
 
 ## Errors
 
-All derive from `HttpKernelError`, in `xtr_http_kernel.exception`:
+All derive from `HttpKernelError`, and import from `xtr_http_kernel` or
+`xtr_http_kernel.exception`:
 
 | Error | Raised when |
 | --- | --- |
@@ -269,5 +275,8 @@ A route marker resolving with no kernel attached, or outside a request scope, ra
 - Do not use `TestClient`, and do not drive the app without entering its lifespan: no kernel is
   attached, so every marker fails.
 - Do not expect a body on `ResponseEvent`. Answer at `RequestEvent` or `ExceptionEvent` instead.
+- Do not expect a service to be reset between requests. Concurrent requests share whatever is
+  built for the application's life, so nothing is cleared per request; a service that must not
+  outlive one request is registered `lifetime="scoped"`.
 - Do not look for a controller, controller-arguments or view event. Routing, argument resolution
   and serialization are the framework's, deliberately.

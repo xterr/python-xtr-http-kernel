@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, final
 
 import pytest
 from typing_extensions import override
@@ -11,39 +11,69 @@ from xtr_dependency_injection import Bundle, Kernel, as_bundle
 from tests.support.bundles import Stamp
 from xtr_http_kernel import MIDDLEWARE_TAG, MiddlewareStack
 from xtr_http_kernel.bundle import HttpKernelBundle
-from xtr_http_kernel.bundle.request_lifecycle_middleware_factory import (
-    RequestLifecycleMiddlewareFactory,
-)
 from xtr_http_kernel.exception import InvalidMiddlewarePriorityError
+from xtr_http_kernel.request_lifecycle_middleware import RequestLifecycleMiddleware
 
 if TYPE_CHECKING:
+    from starlette.types import ASGIApp, Receive, Scope, Send
     from xtr_dependency_injection import ContainerBuilder, ServiceConfigurator
 
 pytestmark = pytest.mark.anyio
 
-
-def low_stamp() -> Stamp:
-    return Stamp("low")
-
-
-def high_stamp() -> Stamp:
-    return Stamp("high")
+COMPOSED: list[str] = []
+"""Every label the stack under test composed, innermost first."""
 
 
-def tied_first_stamp() -> Stamp:
-    return Stamp("tied-first")
+@final
+class _ComposedStamp:
+    """A contributed factory journalling its label when a stack composes it.
+
+    ``wrap`` works inwards out, so the journal read backwards is the order
+    the chain hands a request on in — outermost first.
+    """
+
+    def __init__(self, label: str) -> None:
+        self._label = label
+
+    def __call__(self, app: ASGIApp) -> ASGIApp:
+        COMPOSED.append(self._label)
+        return app
 
 
-def tied_second_stamp() -> Stamp:
-    return Stamp("tied-second")
+async def _passthrough(scope: Scope, receive: Receive, send: Send) -> None:
+    """The application a stack is composed over, to see what it wrapped it in."""
+    del scope, receive, send
 
 
-def default_stamp() -> Stamp:
-    return Stamp("default")
+def _composition_order(stack: MiddlewareStack) -> list[str]:
+    """Compose ``stack`` over nothing and return the labels, outermost first."""
+    COMPOSED.clear()
+    _ = stack.wrap(_passthrough)
+    return list(reversed(COMPOSED))
 
 
-def zero_stamp() -> Stamp:
-    return Stamp("zero")
+def low_stamp() -> _ComposedStamp:
+    return _ComposedStamp("low")
+
+
+def high_stamp() -> _ComposedStamp:
+    return _ComposedStamp("high")
+
+
+def tied_first_stamp() -> _ComposedStamp:
+    return _ComposedStamp("tied-first")
+
+
+def tied_second_stamp() -> _ComposedStamp:
+    return _ComposedStamp("tied-second")
+
+
+def default_stamp() -> _ComposedStamp:
+    return _ComposedStamp("default")
+
+
+def zero_stamp() -> _ComposedStamp:
+    return _ComposedStamp("zero")
 
 
 def bad_stamp() -> Stamp:
@@ -96,14 +126,14 @@ async def test_tag_priorities_order_the_stack_highest_outermost() -> None:
     async with await _kernel(OrderedBundle).boot() as booted:
         stack = await booted.container.get(MiddlewareStack)
 
-    labels = [factory.label for factory in stack if isinstance(factory, Stamp)]
+    labels = _composition_order(stack)
     # ``low`` registered first yet sits last; the tied pair keeps its
     # registration order; ``default`` (no priority attribute) sits at 0 —
     # tied with the explicit ``zero`` registered after it, and before it.
     assert labels == ["high", "tied-first", "tied-second", "default", "zero", "low"]
 
 
-async def test_the_bundle_alone_stacks_only_its_lifecycle_factory() -> None:
+async def test_the_bundle_alone_stacks_its_lifecycle_middleware() -> None:
     kernel = Kernel(
         "xtr_http_kernel.bundle",
         env="test",
@@ -114,8 +144,7 @@ async def test_the_bundle_alone_stacks_only_its_lifecycle_factory() -> None:
     async with await kernel.boot() as booted:
         stack = await booted.container.get(MiddlewareStack)
 
-    assert len(stack) == 1
-    assert all(isinstance(factory, RequestLifecycleMiddlewareFactory) for factory in stack)
+    assert isinstance(stack.wrap(_passthrough), RequestLifecycleMiddleware)
 
 
 def test_a_non_integer_priority_fails_the_build_naming_the_service() -> None:

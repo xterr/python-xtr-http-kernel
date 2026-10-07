@@ -16,6 +16,8 @@ from xtr_dependency_injection import as_service, configure
 from xtr_event_dispatcher.bundle import EventDispatcherConfig
 from xtr_logging import HandlerInterface, ProcessorInterface, UidProcessor
 
+from xtr_http_kernel.bundle import HttpKernelConfig
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -57,6 +59,14 @@ def event_dispatcher_config() -> EventDispatcherConfig:
     # Tracing ON: a per-unit trace only exists then, and the lifecycle
     # middleware frames each request as one unit of the traced dispatcher.
     return EventDispatcherConfig(trace=True)
+
+
+@configure
+def http_kernel_config() -> HttpKernelConfig:
+    # Inbound ids trusted: a failing request's 500 is the framework's own,
+    # past the lifecycle, so the only way a test can name the request its
+    # log batch belongs to is to send the id in with it.
+    return HttpKernelConfig(trust_request_id=True)
 
 
 @as_service(qualifier="collect")

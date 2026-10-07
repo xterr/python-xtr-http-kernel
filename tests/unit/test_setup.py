@@ -12,7 +12,7 @@ from xtr_dependency_injection.exception import FastapiIntegrationError
 from xtr_dependency_injection.integration.fastapi import provider, request_scope
 
 from tests.fixtures.served_app.services import Greeter
-from tests.support.bundles import PlainStamp, ServedBundle, Stamp
+from tests.support.bundles import ServedBundle
 from tests.support.serving import serving
 from xtr_http_kernel import MiddlewareStack, setup
 from xtr_http_kernel.bundle import HttpKernelBundle
@@ -21,11 +21,17 @@ from xtr_http_kernel.testing import override_services
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
+    from starlette.types import Receive, Scope, Send
     from xtr_dependency_injection.kernel.compiled_kernel import CompiledKernel
 
 pytestmark = pytest.mark.anyio
 
 _STACK_KEY = "_xtr_http_kernel_middleware"
+
+
+async def _passthrough(scope: Scope, receive: Receive, send: Send) -> None:
+    """The application a stack is composed over, to see what it wrapped it in."""
+    del scope, receive, send
 
 
 def _kernel() -> Kernel:
@@ -123,7 +129,7 @@ async def test_the_applications_own_lifespan_state_passes_through() -> None:
         assert state == {"marker": "from-the-app"}
 
 
-async def test_the_kernels_stack_waits_on_the_state_sorted_outermost_first() -> None:
+async def test_the_kernels_stack_waits_on_the_state_for_the_life_of_the_application() -> None:
     app = FastAPI()
     setup(
         app,
@@ -136,9 +142,12 @@ async def test_the_kernels_stack_waits_on_the_state_sorted_outermost_first() -> 
 
     async with app.router.lifespan_context(app):
         stack = cast("MiddlewareStack", getattr(app.state, _STACK_KEY))
-        labels = [factory.label for factory in stack if isinstance(factory, (Stamp, PlainStamp))]
+        # The bundle contributed factories, so the chain wraps rather than
+        # passing the application through; the order they wrap in is what
+        # the served-application tests read off a real request.
+        assert isinstance(stack, MiddlewareStack)
+        assert stack.wrap(_passthrough) is not _passthrough
 
-    assert labels == ["outer", "plain", "inner"]
     assert getattr(app.state, _STACK_KEY, None) is None
 
 
@@ -156,7 +165,7 @@ async def test_without_the_bundle_requests_run_with_an_empty_stack() -> None:
     async with serving(app) as client:
         stack = cast("MiddlewareStack", getattr(app.state, _STACK_KEY))
         assert isinstance(stack, MiddlewareStack)
-        assert len(stack) == 0
+        assert stack.wrap(_passthrough) is _passthrough
         response = await client.get("/ping")
 
     assert response.status_code == 200

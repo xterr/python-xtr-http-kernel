@@ -23,6 +23,9 @@ pytestmark = pytest.mark.anyio
 
 HEX_32 = re.compile(r"^[0-9a-f]{32}$")
 
+TRUSTING = "tests.fixtures.lifecycle_overrides.trusted_request_id"
+"""The resource turning ``trust_request_id`` on, which is off by default."""
+
 
 class TeapotError(RuntimeError):
     """An exception carrying the status it stands for."""
@@ -73,8 +76,18 @@ async def test_setup_installs_the_lifecycle_middleware() -> None:
     assert HEX_32.match(response.headers["x-request-id"])
 
 
-async def test_a_valid_request_id_is_echoed() -> None:
+async def test_an_inbound_request_id_is_not_echoed_by_default() -> None:
     app = _application(_kernel())
+
+    async with serving(app) as client:
+        response = await client.get("/ping", headers={"X-Request-Id": "trace-1.A_b"})
+
+    assert response.headers["x-request-id"] != "trace-1.A_b"
+    assert HEX_32.match(response.headers["x-request-id"])
+
+
+async def test_a_valid_request_id_is_echoed_when_inbound_ids_are_trusted() -> None:
+    app = _application(_kernel(TRUSTING))
 
     async with serving(app) as client:
         response = await client.get("/ping", headers={"X-Request-Id": "trace-1.A_b"})
@@ -82,8 +95,8 @@ async def test_a_valid_request_id_is_echoed() -> None:
     assert response.headers["x-request-id"] == "trace-1.A_b"
 
 
-async def test_an_invalid_request_id_is_replaced() -> None:
-    app = _application(_kernel())
+async def test_an_invalid_request_id_is_replaced_even_when_trusted() -> None:
+    app = _application(_kernel(TRUSTING))
 
     async with serving(app) as client:
         response = await client.get("/ping", headers={"X-Request-Id": "bad id!"})
@@ -93,7 +106,7 @@ async def test_an_invalid_request_id_is_replaced() -> None:
 
 
 async def test_a_server_error_logs_one_critical_record_with_the_request_id() -> None:
-    app = _application(_kernel())
+    app = _application(_kernel(TRUSTING))
 
     async with serving(app) as client:
         response = await client.get("/boom", headers={"X-Request-Id": "boom-1"})

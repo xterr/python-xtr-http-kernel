@@ -57,18 +57,3 @@ def test_an_empty_stack_wraps_nothing() -> None:
         del scope, receive, send
 
     assert MiddlewareStack().wrap(downstream) is downstream
-
-
-def test_len_counts_the_factories() -> None:
-    journal: list[str] = []
-
-    assert len(MiddlewareStack()) == 0
-    assert len(MiddlewareStack((_labelling_factory("one", journal),))) == 1
-
-
-def test_iter_yields_the_factories_in_order() -> None:
-    journal: list[str] = []
-    first = _labelling_factory("first", journal)
-    second = _labelling_factory("second", journal)
-
-    assert list(MiddlewareStack((first, second))) == [first, second]

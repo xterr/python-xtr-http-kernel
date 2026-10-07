@@ -18,7 +18,7 @@ def http_kernel() -> HttpKernelConfig:
 | Field | Default | What it sets |
 | --- | --- | --- |
 | `request_id_header` | `"X-Request-Id"` | the header the id is read from and echoed on; must be a non-empty HTTP token |
-| `trust_request_id` | `True` | keep a well-formed incoming id; `False` mints a fresh one every request |
+| `trust_request_id` | `False` | mint a fresh id every request; `True` keeps a well-formed incoming one |
 | `disallow_search_indexing` | `False` | mark every response `X-Robots-Tag: noindex` |
 | `log_channel` | `"request"` | the logging channel the error listener writes to |
 | `middleware_priority` | `0` | where the lifecycle middleware sits among the contributed factories, highest outermost |
@@ -37,6 +37,15 @@ Each raises `InvalidArgumentError`, which is also a `ValueError`:
 The bundle declares the default `request` channel on the logging config for you. An application
 renaming it must declare the new channel in its **own** logging configuration: this bundle's
 config resolves after logging's, so it cannot declare a name it does not yet know.
+
+## trust_request_id
+
+Off by default, and it has one prerequisite: a proxy you control in front of the application,
+setting `request_id_header` itself and stripping whatever the caller sent. Reached directly,
+the caller picks the id and can hand two requests the same one, mixing their log records on
+purpose. Left off, the minted id still reaches `request.state.request_id`, every log record
+made while handling, and the response, so a caller quoting the response's id names exactly one
+request. A caller carrying a trace id of a wider system sends it under a header of its own.
 
 ## app
 

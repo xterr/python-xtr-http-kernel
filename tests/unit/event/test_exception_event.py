@@ -20,7 +20,6 @@ def test_it_carries_the_request_and_what_was_raised(http_request: Request) -> No
 def test_an_exception_nobody_converted_carries_no_response(http_request: Request) -> None:
     event = ExceptionEvent(http_request, RuntimeError("boom"))
 
-    assert event.has_response() is False
     assert event.response is None
     assert event.is_propagation_stopped() is False
 
@@ -31,7 +30,6 @@ def test_converting_the_exception_stops_the_listeners_after_it(http_request: Req
 
     event.set_response(response)
 
-    assert event.has_response() is True
     assert event.response is response
     assert event.is_propagation_stopped() is True
 

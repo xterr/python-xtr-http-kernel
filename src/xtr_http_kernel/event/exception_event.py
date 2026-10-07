@@ -51,10 +51,6 @@ class ExceptionEvent(Event):
         """Return the response a listener turned the exception into, if one did."""
         return self._response
 
-    def has_response(self) -> bool:
-        """Tell whether a listener turned the exception into a response."""
-        return self._response is not None
-
     def set_response(self, response: Response) -> None:
         """Answer with ``response``, and skip the listeners after this one.
 

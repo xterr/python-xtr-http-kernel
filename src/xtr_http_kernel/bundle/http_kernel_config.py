@@ -21,8 +21,12 @@ class HttpKernelConfig:
     Attributes:
         request_id_header: The header the request id is read from and echoed
             on. Must be a non-empty HTTP token.
-        trust_request_id: Whether a well-formed incoming id is kept. When
-            false every request gets a fresh one.
+        trust_request_id: Whether a well-formed incoming id is kept. Off by
+            default, so every request gets a fresh one: a caller can
+            otherwise choose the id its own requests are logged under, and
+            so collide two requests' records on purpose. Turn it on only
+            where a proxy you control sets the header and strips whatever
+            the caller sent.
         disallow_search_indexing: Whether every response is marked
             ``X-Robots-Tag: noindex``.
         log_channel: The logging channel the error listener writes to. The
@@ -41,7 +45,7 @@ class HttpKernelConfig:
     """
 
     request_id_header: str = "X-Request-Id"
-    trust_request_id: bool = True
+    trust_request_id: bool = False
     disallow_search_indexing: bool = False
     log_channel: str = "request"
     middleware_priority: int = 0

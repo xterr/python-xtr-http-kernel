@@ -7,15 +7,14 @@ from typing import TYPE_CHECKING, ClassVar, Final, cast
 
 from fastapi import FastAPI
 
-from xtr_http_kernel.bundle.http_kernel_config import HttpKernelConfig
+from xtr_http_kernel.bundle.http_kernel_config import (  # noqa: TC001 — read at runtime: the container fills the constructor from this annotation
+    HttpKernelConfig,
+)
 
 if TYPE_CHECKING:
     from xtr_console import ConsoleStyle
 
 __all__ = ["RouterCommand"]
-
-_ZERO_CONFIG: Final = HttpKernelConfig()
-"""What a console without a container builds these commands with."""
 
 _NO_APPLICATION: Final = (
     'no application to read: pass --app "package.module:app", or name one on the '
@@ -26,9 +25,11 @@ _NO_APPLICATION: Final = (
 class RouterCommand:
     """A command reporting on an application, named on the command line or configured.
 
-    A container builds it with the http kernel's configuration, so an
-    application that names its own needs no option. Without a container the
-    console builds it bare, and ``--app`` is the only way to name one.
+    The http kernel's configuration is what it is built from, so an
+    application that names its own application there needs no option; a
+    configuration that names none leaves ``--app`` as the only way. Nothing
+    stands in for the configuration: a console with no container to supply
+    it reports the parameter it cannot fill.
 
     Nothing is imported until a command runs, and the application is only
     read: no server starts, and no route is touched.
@@ -38,7 +39,7 @@ class RouterCommand:
 
     _config: HttpKernelConfig
 
-    def __init__(self, config: HttpKernelConfig = _ZERO_CONFIG) -> None:
+    def __init__(self, config: HttpKernelConfig) -> None:
         """Report on the application ``config`` names, unless an option overrides it."""
         self._config = config
 

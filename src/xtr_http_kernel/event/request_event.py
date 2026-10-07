@@ -42,10 +42,6 @@ class RequestEvent(Event):
         """Return the response a listener answered with, if one did."""
         return self._response
 
-    def has_response(self) -> bool:
-        """Tell whether a listener answered the request itself."""
-        return self._response is not None
-
     def set_response(self, response: Response) -> None:
         """Answer the request with ``response``, and skip the listeners after this one.
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, final
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator
+    from collections.abc import Callable, Iterable
 
     from starlette.types import ASGIApp
 
@@ -42,11 +42,3 @@ class MiddlewareStack:
         for factory in reversed(self._factories):
             wrapped = factory(wrapped)
         return wrapped
-
-    def __len__(self) -> int:
-        """Return how many factories the stack holds."""
-        return len(self._factories)
-
-    def __iter__(self) -> Iterator[MiddlewareFactory]:
-        """Yield the factories, the outermost first."""
-        return iter(self._factories)

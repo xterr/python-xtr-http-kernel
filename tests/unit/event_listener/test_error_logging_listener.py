@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from asyncio import CancelledError
 from typing import TYPE_CHECKING, ClassVar, final
 
+import pytest
 from typing_extensions import override
 from xtr_logging_contracts import EXCEPTION_KEY, AbstractLogger, Level
 
@@ -79,6 +81,17 @@ def test_a_status_that_is_not_a_number_counts_as_unknown(http_request: Request) 
     ErrorLoggingListener(logger).on_exception(ExceptionEvent(http_request, MisstatedError("odd")))
 
     assert logger.entries[0][0] is Level.CRITICAL
+
+
+@pytest.mark.parametrize("raised", [CancelledError(), KeyboardInterrupt(), SystemExit(1)])
+def test_what_is_not_a_failure_is_logged_at_info(
+    http_request: Request, raised: BaseException
+) -> None:
+    logger = RecordingLogger()
+
+    ErrorLoggingListener(logger).on_exception(ExceptionEvent(http_request, raised))
+
+    assert logger.entries[0][0] is Level.INFO
 
 
 def test_the_record_names_the_request(http_request: Request) -> None:
