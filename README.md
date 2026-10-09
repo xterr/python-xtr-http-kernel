@@ -31,6 +31,9 @@ Listeners are services, so they come from the container with everything else the
   exception, and once everything has been sent.
 - 🪪 **A request id for free.** Every response carries one; every log record made while handling
   carries the same.
+- ✉️ **The request and the response as messages.** Ask for them by the
+  [HTTP message contract](../xtr-http-message-contracts) and a library that never heard of this
+  web framework can read the one and fill in the other.
 
 ## Install
 
@@ -42,7 +45,9 @@ uv add "xtr-http-kernel[rate-limiter]"      # + rate limits on routes, routers a
 ```
 
 Requires Python 3.11+. The web framework and the container layer come with the package
-itself — this *is* the integration — so neither is an extra.
+itself — this *is* the integration — so neither is an extra, and neither is the
+[HTTP message contract](../xtr-http-message-contracts) or
+[its implementation](../xtr-http-message): the bridge below is made of them.
 
 ## Quick start
 
@@ -175,6 +180,120 @@ and the generated OpenAPI schema stays the framework's too.
 What is left for the lifecycle is everything *around* the endpoint — the id, the log line, the
 header, the unit of work — and that is all it does.
 
+## The request and the response as messages
+
+A library that reads a request and fills in a response should not have to know which web
+framework the application runs on. It takes the
+[HTTP message contract](../xtr-http-message-contracts) — `ServerRequestInterface`,
+`ResponseInterface` — and this package hands it the request being served and a response to
+answer with. An endpoint asks for the same two, naming the bridge's own `Response` where the
+contract would do, so that what it returns is the type it declares:
+
+```python
+from xtr_dependency_injection import Injected
+from xtr_http_message_contracts import ServerRequestInterface
+
+from xtr_http_kernel.bridge import Response
+
+
+@app.post("/tokens")
+async def issue(
+    request: Injected[ServerRequestInterface],
+    response: Injected[Response],
+) -> Response:
+    _ = response.get_body().write(await issuer.issue(request))
+    return response.with_status(201).with_header("content-type", "application/json")
+```
+
+- **Built only when asked.** The request is built the first time something asks for it, from
+  FastAPI's own request object — the body it already read, the form it already parsed. A route
+  that does not ask pays nothing, and nothing is buffered anywhere.
+- **Once per request.** Both are `lifetime="scoped"`, so every endpoint, dependency and service
+  of one request sees the same request message and the same response. `RequestInterface` and
+  `MessageInterface` lead to the same build, so a parameter typed by any of the three gets it.
+- **One response, two names.** `xtr_http_kernel.bridge.Response` and `ResponseInterface` lead to
+  that same build: an endpoint asks for the class and declares it returns it — parameter and
+  return annotation the same type, nothing to narrow and nothing to configure — while a library
+  that knows only the contract asks for `ResponseInterface` and is handed that very response.
+- **Returned as it is.** The injected response is `xtr_http_kernel.bridge.Response`: an
+  HTTP message *and* a FastAPI response. Return it and it goes out — status, headers and
+  body read at the moment of sending, so a body written through `get_body().write(...)` after
+  the response was handed over is the body on the wire. The request id header and every
+  `ResponseEvent` listener still apply to it, like any other response.
+- **Every response in an application comes from one of those two.** Either it is the injected
+  response, or the injected response factory made it — and every response that factory makes,
+  and every response a `with_*` on either of them returns, is that same class. So there is
+  nothing to configure: no default response class, no encoder registration, no route class of
+  its own. Returning one is the whole of it. A route that makes responses of its own asks for
+  `ResponseFactory`, the class, and stays typed through every `with_*`;
+  `ResponseFactoryInterface` is the same service, for a library that knows only the contract.
+  **Never build an `xtr_http_message` response or an `xtr_http_message.factory.HttpFactory` in
+  code that serves a request:** those concrete classes know nothing of this web framework, so
+  one of them returned from a route is not a response the framework can send. They are for code
+  *outside* a served application — a test, a worker, a console command — and a message that
+  arrived from there is sent by [converting it](#building-and-converting-messages).
+- **Annotate the return `-> Response`.** FastAPI reads the return annotation to build the
+  schema, and the class above is a response of its own, so the framework sends it rather than
+  making a schema of it. A bare `ResponseInterface` annotation fails the route at definition,
+  which is the framework telling you it cannot make a schema of a contract — so a route
+  annotates the class at both ends and a strict type checker is satisfied with no narrowing.
+- **Values are the framework's own.** `get_query_params()` and the parsed body of a submitted
+  form are FastAPI's own `QueryParams` and `FormData`, handed over rather than copied: `["a"]`
+  is the last value and `getlist("a")` is every value, and a bracketed name such as `items[]`
+  is that name, literally. Uploaded files wrap what the framework parsed where it lies, so
+  nothing is copied; a field submitted with no file reports `UploadError.NO_FILE`.
+- **Per-request services only.** A service that takes a `ServerRequestInterface`, a `Response`
+  or a `ResponseInterface` must be `lifetime="scoped"` or transient. A singleton would hold the
+  request or the response of whichever request happened to build it, so the container refuses
+  one at build time, naming the parameter.
+- **A socket has no request message.** On a WebSocket route, asking for one raises
+  `UnsupportedConnectionError`: take the framework's own `websocket: WebSocket` instead.
+
+Nothing about FastAPI's own `Form`, `File`, `Body`, query and JSON parameters changes, with or
+without these on the route — including its `422` bodies.
+
+### Building and converting messages
+
+The bundle also registers the six factories of the message contract, so a library can build a
+message of its own: `RequestFactoryInterface`, `ServerRequestFactoryInterface`,
+`StreamFactoryInterface`, `UploadedFileFactoryInterface` and `UriFactoryInterface` are answered
+by [xtr-http-message](../xtr-http-message)'s `HttpFactory`, and `ResponseFactoryInterface` by
+this package's `ResponseFactory` — so a response made through it is returnable as it is, like
+the injected one.
+
+Take those factories by their interfaces and the application decides what is behind them.
+Reaching past them — `xtr_http_message.Response(...)`, `HttpFactory()` — in code that serves a
+request gets you a message the framework cannot send, and is the one thing to avoid here. Those
+classes are what a test, a worker or a console command builds, where there is no request being
+served and no response to return.
+
+Two more services cross between a message and the framework, for the times you hold the wrong
+one:
+
+| Service | Does |
+|---|---|
+| `HttpMessageFactoryInterface` | `await create_request(request)` and `create_response(response)`: the framework's own, as messages |
+| `StarletteHttpFactoryInterface` | `create_request(message, streamed=False)` and `create_response(message, streamed=False)`: a message, as the framework's own |
+
+A response that arrived from outside the application — one a worker built with
+`xtr_http_message.Response(...)`, say — is sent by converting it with
+`StarletteHttpFactoryInterface.create_response(...)`; `streamed=True` sends the body in chunks
+instead of whole. That conversion is for a message that *came from elsewhere*; a response the
+application itself is answering with comes from the injected `ResponseFactoryInterface` or is
+the injected `ResponseInterface`, and needs no conversion at all.
+
+Neither direction alters what it is handed: where it cannot carry something across, it says so.
+`create_response(response)` refuses a response that streams its body with
+`StreamedResponseBodyError`, because reading that body would consume it and leave the response
+with nothing to send — build the message from the content being streamed instead. It refuses a
+response declaring a `Content-Range` with `RangedResponseBodyError` for the mirror reason: which
+bytes of the file that header names is settled where the response is sent, so the message would
+carry the whole file under a header saying it carries one part of it.
+`StarletteHttpFactoryInterface.create_request(message)` refuses a cookie a `Cookie` header
+cannot carry unchanged with `InvalidCookieError`, naming it: the cookies of a message are a
+plain mapping nothing checked on the way in, and a value holding `;` would be read back as
+further cookies of its own.
+
 ## Scoped services
 
 A service registered `lifetime="scoped"` is built once per request and **released after the
@@ -290,7 +409,13 @@ removing it undoes.
 
 - **Install** — `uv add "xtr-http-kernel[logging,console]"`; `logging` brings the listeners
   that write to a log, `console` the commands that report on the router, `rate-limiter` the
-  [rate limits](#rate-limits). None is needed to serve requests.
+  [rate limits](#rate-limits). None is needed to serve requests. The
+  [HTTP message contract](../xtr-http-message-contracts) and
+  [its implementation](../xtr-http-message) come with the package, not behind an extra: the
+  [messages](#the-request-and-the-response-as-messages) are part of what it does. So does the
+  parser a submitted form with files in it is read with: building the request as a message
+  asks the web framework for the form behind every multipart body, and the framework refuses
+  outright where that parser is missing.
 - **Recipe** — `uv run xtr-recipes recipes:sync` does the *Activate* step below: it lists
   `HttpKernelBundle`. There is no config file, environment or ignore line to write; it prints the
   `setup(app, kernel)` step, which a recipe cannot make for you.
@@ -300,10 +425,12 @@ removing it undoes.
   lifecycle dispatches through it; the [logging](../xtr-logging), [console](../xtr-console) and
   [rate limiter](../xtr-rate-limiter) bundles whenever those packages are *installed* — they are required peers, pulled in and made
   active without being listed, and left out silently when the package is not installed. Listing
-  is not what activates them; installing the extra is.
+  is not what activates them; installing the extra is. No bundle comes along for the messages:
+  neither message package ships one, and this bundle registers their services itself.
 - **Configure** — nothing is required: the zero-config path gives every request a fresh `uuid4`
   id under `X-Request-Id` — an inbound one is not trusted — no robots header, and the `request`
-  log channel. A
+  log channel, and makes the request and the response of a request askable as
+  [messages](#the-request-and-the-response-as-messages). A
   `<app>/config/http_kernel.py` `@configure` function returning an `HttpKernelConfig` changes
   that — see [Configure](#configure) and [Kernel / bundle](#kernel--bundle).
 - **Environment** — nothing.
@@ -370,7 +497,9 @@ def http_kernel() -> HttpKernelConfig:
 ```
 
 The bundle registers the lifecycle middleware factory, the listeners, and — when a console
-bundle is active — the router commands. It requires the event dispatcher bundle outright, and
+bundle is active — the router commands, plus the
+[messages](#the-request-and-the-response-as-messages) and the factories behind them. It
+requires the event dispatcher bundle outright, and
 the logging and console bundles when installed. Its zero-config path builds and boots with no
 application configuration and touches no I/O until a request arrives.
 
@@ -460,10 +589,14 @@ itself, as well as from `xtr_http_kernel.exception`.
 | Error | Raised when |
 |---|---|
 | `InvalidArgumentError` | an `HttpKernelConfig` field holds a value the lifecycle would misread; also a `ValueError` |
+| `InvalidCookieError` | a request message carries a cookie a `Cookie` header cannot carry unchanged — a name that is not a token, or a value holding `;`, a control character or anything beyond visible ASCII; also a `ValueError` |
 | `InvalidMiddlewarePriorityError` | a `http_kernel.middleware` tag's `priority` is not an integer |
 | `InvalidRateLimitError` | a `RateLimited` takes fewer than one token, limits a router that already has routes, or its key function returns no string; also a `ValueError` |
+| `RangedResponseBodyError` | a response being built into a message declares one range of the file it reads its body from, so the message would carry the whole file under a header saying otherwise |
+| `StreamedResponseBodyError` | a response being built into a message streams its body, which cannot be read without consuming it |
 | `TooManyRequestsError` | a limiter refused the request — a 429 the framework answers, with `Retry-After` |
 | `UnknownRateLimiterError` | a `RateLimited` names a limiter the application did not configure; also a `LookupError` |
+| `UnsupportedConnectionError` | something asked for the request as a message while a WebSocket was being served |
 
 ## Layout
 
@@ -471,6 +604,7 @@ itself, as well as from `xtr_http_kernel.exception`.
 xtr_http_kernel/
 ├── setup.py                        setup(app, kernel), the one call an application makes
 ├── testing.py                      override_services, for a served application under test
+├── bridge/                         the request and the response as HTTP messages, both ways
 ├── event/                          the five lifecycle events, one class per file
 ├── kernel_events.py                KernelEvents, the name each of them is dispatched under
 ├── event_listener/                 the listeners the bundle registers

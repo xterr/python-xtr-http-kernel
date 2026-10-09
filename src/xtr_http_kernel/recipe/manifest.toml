@@ -7,7 +7,9 @@
 
 # No [files]: nothing is required. With no configuration a request gets a uuid4
 # id under X-Request-Id, no robots header, and the "request" log channel; an
-# application changing any of that writes config/http_kernel.py itself.
+# application changing any of that writes config/http_kernel.py itself. The
+# request and the response of a request are askable as HTTP messages with no
+# configuration either: the bundle registers them and their factories outright.
 
 # No [env], and nothing to ignore.
 

@@ -4,7 +4,9 @@ The bundle is the integration, never the library: an application drives the
 lifecycle itself with :func:`xtr_http_kernel.setup`, and lists this bundle so
 the container owns the pieces the lifecycle reaches for — the middleware
 factory the setup call composes, and the listeners that give every request
-an id, a log record on failure and a unit of work of its own.
+an id, a log record on failure and a unit of work of its own — plus the
+bridge, so an endpoint or a per-request service can ask for the request and
+the response as HTTP messages.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ from xtr_http_kernel.exception import InvalidMiddlewarePriorityError
 from xtr_http_kernel.middleware_stack import MiddlewareStack
 from xtr_http_kernel.middleware_tag import MIDDLEWARE_TAG
 
+from ._messages import register as register_messages
 from .http_kernel_config import HttpKernelConfig
 from .request_lifecycle_middleware_factory import RequestLifecycleMiddlewareFactory
 
@@ -92,6 +95,7 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
         loading their module late keeps the console dependency out of the
         graph of an application that never runs one.
         """
+        register_messages(services)
         _ = services.set(RequestLifecycleMiddlewareFactory).add_tag(
             MIDDLEWARE_TAG, priority=config.middleware_priority
         )

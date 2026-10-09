@@ -29,9 +29,19 @@ dependencies = [
     "xtr-dependency-injection[fastapi]>=3.0,<4",
     "xtr-event-dispatcher>=3.0,<4",
     "xtr-event-dispatcher-contracts>=3.0,<4",
+    # The bridge builds messages and is the one place a message meets a route,
+    # so both the contract and the implementation of it are required: the
+    # bundle registers the implementation's factories under the contract.
+    "xtr-http-message>=3.0,<4",
+    "xtr-http-message-contracts>=3.0,<4",
     "xtr-logging-contracts>=3.0,<4",
     "xtr-service-contracts>=3.0,<4",
     "typing-extensions>=4.4",
+    # A submitted form with files in it: the bridge asks the web framework for
+    # the form behind every multipart body, and the framework refuses outright
+    # when the parser it reads one with is missing. So a route that takes the
+    # request as a message needs it on any install, not only in this checkout.
+    "python-multipart>=0.0.18",
 ]
 
 [project.optional-dependencies]

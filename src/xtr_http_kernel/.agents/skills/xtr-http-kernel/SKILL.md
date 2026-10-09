@@ -1,6 +1,6 @@
 ---
 name: xtr-http-kernel
-description: The HTTP entry point for a FastAPI application built on xtr-dependency-injection — setup(app, kernel), a request lifecycle of five events, container services injected into routes, and rate limits on routes. Use when wiring a FastAPI app to a kernel, writing a route that needs a container service, adding a request id or a response header for every request, logging uncaught exceptions with the request that caused it, short-circuiting a request before routing, turning an exception into a response, opening a per-request unit of work, contributing middleware from a bundle, listing routes with debug:router, rate limiting a route or router, or testing a served application with an httpx ASGI client. For plain FastAPI matters (routing, Depends, request bodies, response models, OpenAPI) use the fastapi skill instead.
+description: The HTTP entry point for a FastAPI application on xtr-dependency-injection — setup(app, kernel), a request lifecycle of five events, container services injected into routes, the request and the response as HTTP messages, and rate limits on routes. Use when wiring a FastAPI app to a kernel, writing a route that needs a container service, injecting ServerRequestInterface or ResponseInterface into a route or service, returning an HTTP message response from a route, converting a message to the framework's own request or response, adding a request id or response header to every response, logging uncaught exceptions with their request, short-circuiting a request before routing, turning an exception into a response, opening a per-request unit of work, contributing middleware from a bundle, listing routes with debug:router, rate limiting a route, or testing a served application with an httpx ASGI client. For plain FastAPI matters (routing, Depends, bodies, response models, OpenAPI) use the fastapi skill instead.
 ---
 
 # xtr-http-kernel
@@ -16,6 +16,10 @@ signatures. Everything the framework already does well is left alone.
   request.
 - Pull a container service into a route with `Injected[T]`, `Annotated[T, Target("name")]` or
   `Annotated[T, Autowire(param=...)]`. Keep `Depends` for everything that is the framework's.
+- Take the request as a message with `Injected[ServerRequestInterface]`, the response with
+  `Injected[Response]` — `xtr_http_kernel.bridge.Response` — and return it as it is, with the
+  route annotated `-> Response`. A library takes `ResponseInterface` instead and is handed that
+  same response.
 - Join the lifecycle with `@as_event_listener()` from `xtr_event_dispatcher` on a function
   taking one of `RequestEvent`, `ResponseEvent`, `ExceptionEvent`, `FinishRequestEvent`,
   `TerminateEvent`.
@@ -75,6 +79,65 @@ The markers never reach the OpenAPI schema, so the documented parameters stay th
 `lifetime="scoped"` service is built once per request and released after the response has been
 sent, which is when a per-request unit of work commits or rolls back; put cleanup that must
 survive an error in a `finally`.
+
+## Take the request and the response as messages
+
+```python
+from xtr_dependency_injection import Injected
+from xtr_http_message_contracts import ServerRequestInterface
+
+from xtr_http_kernel.bridge import Response
+
+
+@app.post("/tokens")
+async def issue(
+    request: Injected[ServerRequestInterface],
+    response: Injected[Response],
+) -> Response:
+    _ = response.get_body().write(await issuer.issue(request))
+    return response.with_status(201).with_header("content-type", "application/json")
+```
+
+- Built only when asked, from the framework's own request: the body it read and the form it
+  parsed, never a second reading of the wire. A route that does not ask pays nothing.
+- Both are `lifetime="scoped"`: one request message and one response per request.
+  `RequestInterface` and `MessageInterface` lead to the same request.
+- `Response` and `ResponseInterface` lead to the same response: a route asks for the class at
+  both ends, so parameter and return annotation agree with nothing to narrow, and a library
+  that knows only the contract is handed that very object.
+- The injected response *is* a FastAPI response, so return it as it is. Its status, headers and
+  body are read when it is sent, so a body written after it was handed over is the body sent;
+  the request id header and every `ResponseEvent` listener still apply.
+- **Every response in an application comes from one of two places**: the injected
+  response, or the injected response factory. Every response that factory makes, and every
+  response a `with_*` on either returns, is `xtr_http_kernel.bridge.Response`
+  and is returned as it is — nothing to configure: no default response class, no encoder, no
+  route class. A route making responses of its own asks for `ResponseFactory`, the class, and
+  stays typed through every `with_*`; `ResponseFactoryInterface` is the same service, for a
+  library that knows only the contract.
+  **Never build an `xtr_http_message` response or `HttpFactory` in code that serves
+  a request**: those classes know nothing of this framework, so one returned from a route is not
+  something it can send. They are for code outside a served application — tests, workers,
+  console commands. A message that arrived from there is sent with
+  `StarletteHttpFactoryInterface.create_response(message)`.
+- `get_query_params()` and the parsed body of a submitted form are the framework's own
+  `QueryParams` and `FormData`, so `getlist("a")` works and `items[]` is that name literally.
+  Uploaded files wrap what the framework parsed where it lies; a field with no file reports
+  `UploadError.NO_FILE`.
+- The six message factories are registered too: `ResponseFactoryInterface` builds returnable
+  responses, the other five come from `xtr_http_message`'s `HttpFactory`.
+  `HttpMessageFactoryInterface` turns the framework's own into messages;
+  `StarletteHttpFactoryInterface` turns a message into the framework's own, which is how a
+  response built elsewhere is sent.
+- Neither direction alters what it is handed. `create_response(response)` refuses a response
+  that streams its body with `StreamedResponseBodyError` — reading it would consume it and
+  leave the response unsendable, so build the message from the content being streamed instead —
+  and one declaring a `Content-Range` with `RangedResponseBodyError`, since the message would
+  carry the whole file under a header saying it carries one part of it.
+  `create_request(message)` refuses a cookie a `Cookie` header cannot carry unchanged with
+  `InvalidCookieError`, naming it: a value holding `;` would be read back as further cookies.
+- Nothing about FastAPI's `Form`, `File`, `Body`, query and JSON parameters or its `422` bodies
+  changes, with or without these on the route.
 
 ## Join the lifecycle
 
@@ -215,7 +278,9 @@ for you to make.
 
 1. **Install** `uv add "xtr-http-kernel[logging,console]"`. The extras: `logging` adds the
    listeners that write to a log, `console` the router commands, `rate-limiter` the rate limits.
-   None is needed to serve requests.
+   None is needed to serve requests. The two message packages come with it, not behind an extra,
+   and so does the parser a submitted form with files in it is read with: building the request as
+   a message asks the framework for the form behind every multipart body.
 2. **Activate** `HttpKernelBundle: {"all": True}` in `BUNDLES` in `<app>/bundles.py`, imported
    from `xtr_http_kernel.bundle`, then call `setup(app, kernel)` where the application is built.
 3. **Brings along** the event dispatcher bundle always; the logging, console and rate limiter
@@ -255,10 +320,14 @@ All derive from `HttpKernelError`, and import from `xtr_http_kernel` or
 | Error | Raised when |
 | --- | --- |
 | `InvalidArgumentError` | an `HttpKernelConfig` field holds a value the lifecycle would misread; also a `ValueError` |
+| `InvalidCookieError` | a request message being turned into the framework's own carries a cookie a `Cookie` header cannot carry unchanged; also a `ValueError` |
 | `InvalidMiddlewarePriorityError` | a `http_kernel.middleware` tag's `priority` is not an integer |
 | `InvalidRateLimitError` | a `RateLimited` takes fewer than one token, limits a router that already has routes, or its key function returns no string; also a `ValueError` |
+| `RangedResponseBodyError` | a response being turned into a message declares one range of the file it reads its body from |
+| `StreamedResponseBodyError` | a response being turned into a message streams its body, which cannot be read without consuming it |
 | `TooManyRequestsError` | a limiter refused the request; a 429 the framework answers, with `Retry-After` |
 | `UnknownRateLimiterError` | a `RateLimited` names a limiter the application did not configure; also a `LookupError` |
+| `UnsupportedConnectionError` | something asked for the request as a message while a WebSocket was being served |
 
 A route marker resolving with no kernel attached, or outside a request scope, raises
 `FastapiIntegrationError` from xtr-dependency-injection.
@@ -267,9 +336,12 @@ A route marker resolving with no kernel attached, or outside a request scope, ra
 
 - Do not use `Depends` to reach a container service. Use `Injected[T]` or `Target("name")`, so
   the service stays out of the OpenAPI schema.
-- Do not call `attach`, `detach`, `request_scope` or `provider` from
+- Do not call `attach`, `detach`, `request_scope`, `provider` or `current_connection` from
   `xtr_dependency_injection.integration.fastapi`. They are what `setup` is built on; an
-  application calls `setup` and nothing lower.
+  application calls `setup` and nothing lower. To reach the request being served, take the
+  framework's own `request: Request` in a route, or `Injected[ServerRequestInterface]` in a
+  route — a plain `ServerRequestInterface` parameter in a service — for the request as a
+  message.
 - Do not call `setup` after the application has started. The framework refuses new middleware
   then, and the lifecycle would be missing.
 - Do not use `TestClient`, and do not drive the app without entering its lifespan: no kernel is
@@ -278,5 +350,15 @@ A route marker resolving with no kernel attached, or outside a request scope, ra
 - Do not expect a service to be reset between requests. Concurrent requests share whatever is
   built for the application's life, so nothing is cleared per request; a service that must not
   outlive one request is registered `lifetime="scoped"`.
+- Do not give a singleton a `ServerRequestInterface` or a `Response` parameter. Both belong to
+  one request, so the container refuses it at build time; make the service `lifetime="scoped"`
+  or transient.
+- Do not annotate a route `-> ResponseInterface`, and do not write a bare
+  `ServerRequestInterface` parameter: FastAPI fails the route at definition, since it can make
+  no schema of either. Annotate `-> Response` and take `Injected[Response]`.
+- Do not construct `xtr_http_message.Response(...)`, `xtr_http_message.factory.HttpFactory()`
+  or any other concrete message class in a route, a listener or a per-request service. Take the
+  registered factory interface instead; those classes belong to code that is not serving a
+  request.
 - Do not look for a controller, controller-arguments or view event. Routing, argument resolution
   and serialization are the framework's, deliberately.

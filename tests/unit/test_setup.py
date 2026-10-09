@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 from fastapi import FastAPI
+from starlette.requests import HTTPConnection
 from xtr_dependency_injection import Kernel
 from xtr_dependency_injection.exception import FastapiIntegrationError
 from xtr_dependency_injection.integration.fastapi import provider, request_scope
@@ -101,6 +102,8 @@ async def test_pending_overrides_apply_at_the_next_build() -> None:
     app = FastAPI()
     setup(app, _kernel())
     resolve = provider("service", Greeter, None)
+    # What the framework hands a resolver for a request of this application.
+    connection = HTTPConnection({"type": "http", "app": app})
 
     class Fake:
         def greet(self, name: str) -> str:
@@ -108,10 +111,10 @@ async def test_pending_overrides_apply_at_the_next_build() -> None:
 
     with override_services(app, {Greeter: Fake()}):
         async with app.router.lifespan_context(app), request_scope(app):
-            overridden = await resolve()
+            overridden = await resolve(connection)
 
     async with app.router.lifespan_context(app), request_scope(app):
-        real = await resolve()
+        real = await resolve(connection)
 
     assert isinstance(overridden, Fake)
     assert isinstance(real, Greeter)

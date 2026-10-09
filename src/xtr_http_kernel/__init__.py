@@ -26,10 +26,14 @@ from .event import (
 from .exception import (
     HttpKernelError,
     InvalidArgumentError,
+    InvalidCookieError,
     InvalidMiddlewarePriorityError,
     InvalidRateLimitError,
+    RangedResponseBodyError,
+    StreamedResponseBodyError,
     TooManyRequestsError,
     UnknownRateLimiterError,
+    UnsupportedConnectionError,
 )
 from .kernel_events import KernelEvents
 from .middleware_stack import MiddlewareStack
@@ -49,16 +53,20 @@ __all__ = [
     "FinishRequestEvent",
     "HttpKernelError",
     "InvalidArgumentError",
+    "InvalidCookieError",
     "InvalidMiddlewarePriorityError",
     "InvalidRateLimitError",
     "KernelEvents",
     "MiddlewareStack",
+    "RangedResponseBodyError",
     "RequestEvent",
     "RequestLifecycleMiddleware",
     "ResponseEvent",
+    "StreamedResponseBodyError",
     "TerminateEvent",
     "TooManyRequestsError",
     "UnknownRateLimiterError",
+    "UnsupportedConnectionError",
     "__version__",
     "setup",
 ]

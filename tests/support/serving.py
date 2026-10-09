@@ -4,22 +4,29 @@ The ASGI transport drives the application directly, so nothing runs the
 lifespan or copies its state into each connection's scope the way a server
 does. :func:`serving` is that server: it enters the application's lifespan,
 bridges the yielded state into every request, and hands out a client.
+
+:func:`driving` is the same server without the client, for the connections a
+client cannot make: a socket, or a request whose body must arrive in chunks
+of a chosen size while the test watches what the application allocates.
 """
 
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, cast, final
+from typing import TYPE_CHECKING, TypeAlias, cast, final
 
 import httpx
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Callable, Mapping
+    from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 
     from fastapi import FastAPI
     from starlette.types import Message, Receive, Scope, Send
 
-__all__ = ["ServerStateBridge", "serving"]
+__all__ = ["Drive", "ServerStateBridge", "driving", "serving"]
+
+Drive: TypeAlias = "Callable[[Scope, Receive], Awaitable[list[Message]]]"
+"""Runs one connection at the application and returns everything it sent."""
 
 
 @final
@@ -68,3 +75,26 @@ async def serving(
         transport = httpx.ASGITransport(app=bridge, raise_app_exceptions=False)
         async with httpx.AsyncClient(transport=transport, base_url="http://served.test") as client:
             yield client
+
+
+@asynccontextmanager
+async def driving(app: FastAPI) -> AsyncGenerator[Drive, None]:
+    """Serve ``app`` for one application life and yield a driver of raw connections.
+
+    What the driver returns is the messages the application sent, so a test
+    reads the status, the headers and the body straight off the wire — and a
+    failure the application never answered comes back out of the call.
+    """
+    async with app.router.lifespan_context(app) as state:
+        bridge = ServerStateBridge(app, cast("Mapping[str, object] | None", state))
+
+        async def drive(scope: Scope, receive: Receive) -> list[Message]:
+            sent: list[Message] = []
+
+            async def send(message: Message) -> None:
+                sent.append(message)
+
+            await bridge(scope, receive, send)
+            return sent
+
+        yield drive
