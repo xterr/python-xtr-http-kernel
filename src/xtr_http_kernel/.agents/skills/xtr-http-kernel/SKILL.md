@@ -373,6 +373,7 @@ All derive from `HttpKernelError`, and import from `xtr_http_kernel` or
 | `InvalidMiddlewarePriorityError` | a `http_kernel.middleware` tag's `priority` is not an integer |
 | `InvalidRateLimitError` | a `RateLimited` takes fewer than one token, limits a router that already has routes, or its key function returns no string; also a `ValueError` |
 | `RangedResponseBodyError` | a response being turned into a message declares one range of the file it reads its body from |
+| `ResponseAlreadyAMessageError` | a response being turned into a message is the bridge's own, which already is a message: there is nothing to convert |
 | `StreamedResponseBodyError` | a response being turned into a message streams its body, which cannot be read without consuming it |
 | `TooManyRequestsError` | a limiter refused the request; a 429 the framework answers, with `Retry-After` |
 | `UnknownRateLimiterError` | a `RateLimited` names a limiter the application did not configure; also a `LookupError` |

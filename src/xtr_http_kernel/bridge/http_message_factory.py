@@ -19,11 +19,16 @@ from xtr_http_message_contracts.factory import (
     UriFactoryInterface,  # noqa: TC002 — read at runtime, as above.
 )
 
-from xtr_http_kernel.exception import RangedResponseBodyError, StreamedResponseBodyError
+from xtr_http_kernel.exception import (
+    RangedResponseBodyError,
+    ResponseAlreadyAMessageError,
+    StreamedResponseBodyError,
+)
 
 from ._headers import grouped_headers
 from ._scope_uri import scope_uri
 from .http_message_factory_interface import HttpMessageFactoryInterface
+from .response import Response as BridgeResponse
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -209,6 +214,9 @@ class HttpMessageFactory(HttpMessageFactoryInterface):
             The same response, as a message.
 
         Raises:
+            ResponseAlreadyAMessageError: When the response is the bridge's own,
+                which already is a message: there is nothing to convert, and its
+                body is awaited rather than read here.
             RangedResponseBodyError: When the response declares one range of
                 the file it reads its body from: the message would carry the
                 whole file under a header saying it carries a part of it.
@@ -216,6 +224,9 @@ class HttpMessageFactory(HttpMessageFactoryInterface):
                 could only be read by consuming it, which would leave the
                 response with nothing to send.
         """
+        if isinstance(response, BridgeResponse):
+            raise ResponseAlreadyAMessageError(type(response).__name__)
+
         message = self._responses.create_response(response.status_code).with_body(
             self._response_body(response)
         )

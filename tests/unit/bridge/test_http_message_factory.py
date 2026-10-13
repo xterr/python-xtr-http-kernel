@@ -14,7 +14,11 @@ from xtr_http_message_contracts import UploadedFileInterface, UploadError
 from tests.support.asgi_requests import asgi_request
 from xtr_http_kernel.bridge import HttpMessageFactory, ResponseFactory
 from xtr_http_kernel.bridge import Response as KernelResponse
-from xtr_http_kernel.exception import RangedResponseBodyError, StreamedResponseBodyError
+from xtr_http_kernel.exception import (
+    RangedResponseBodyError,
+    ResponseAlreadyAMessageError,
+    StreamedResponseBodyError,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Sequence
@@ -433,6 +437,20 @@ def test_a_file_response_declaring_one_range_of_the_file_is_refused(
         "bytes 0-1/6",
     )
     assert "the range being sent" in str(refusal.value)
+
+
+def test_the_bridges_own_response_is_refused_as_already_a_message(
+    factory: HttpMessageFactory,
+) -> None:
+    with pytest.raises(ResponseAlreadyAMessageError) as refusal:
+        _ = factory.create_response(KernelResponse(status=201))
+
+    assert refusal.value.response == "Response"
+    assert str(refusal.value) == (
+        'The response "Response" already is a message; use it as one '
+        '(read its body with "await response.get_body().get_contents()") '
+        "instead of converting it."
+    )
 
 
 def test_the_response_is_whatever_the_response_factory_builds() -> None:
