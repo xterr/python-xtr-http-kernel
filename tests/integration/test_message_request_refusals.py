@@ -88,22 +88,20 @@ async def test_asking_while_a_socket_is_served_refuses_the_connection() -> None:
             _ = await drive(dict(_SOCKET_SCOPE), _connecting())
 
 
-async def test_a_singleton_asking_for_the_request_fails_the_application_start() -> None:
+def test_a_singleton_asking_for_the_request_fails_at_setup() -> None:
     app = FastAPI()
 
     @app.get("/plain")
     async def plain() -> dict[str, str]:
         return {"plain": "yes"}
 
-    setup(
-        app,
-        Kernel(
-            "tests.fixtures.message_app",
-            env="test",
-            bundles={HttpKernelBundle: {"all": True}, RequestReaderBundle: {"all": True}},
-        ),
-    )
-
+    # setup() compiles the kernel to read its routes, so the refusal comes here.
     with pytest.raises(ContainerCompilationError, match="Singletons can only depend on"):
-        async with app.router.lifespan_context(app):
-            pass  # the lifespan never opens: the kernel it boots refuses to compile
+        setup(
+            app,
+            Kernel(
+                "tests.fixtures.message_app",
+                env="test",
+                bundles={HttpKernelBundle: {"all": True}, RequestReaderBundle: {"all": True}},
+            ),
+        )

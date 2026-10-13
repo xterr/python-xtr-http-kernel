@@ -1,6 +1,6 @@
 ---
 name: xtr-http-kernel
-description: The HTTP entry point for a FastAPI application on xtr-dependency-injection — setup(app, kernel), a request lifecycle of five events, container services injected into routes, the request and the response as HTTP messages, and rate limits on routes. Use when wiring a FastAPI app to a kernel, writing a route that needs a container service, injecting ServerRequestInterface or ResponseInterface into a route or service, returning an HTTP message response from a route, converting a message to the framework's own request or response, adding a request id or response header to every response, logging uncaught exceptions with their request, short-circuiting a request before routing, turning an exception into a response, opening a per-request unit of work, contributing middleware from a bundle, listing routes with debug:router, rate limiting a route, or testing a served application with an httpx ASGI client. For plain FastAPI matters (routing, Depends, bodies, response models, OpenAPI) use the fastapi skill instead.
+description: The HTTP entry point for a FastAPI application on xtr-dependency-injection — setup(app, kernel), routes bundles contribute and applications arrange, a request lifecycle of five events, container services injected into routes, the request and the response as HTTP messages, and rate limits on routes. Use when wiring a FastAPI app to a kernel, shipping a bundle's routes with @as_route_loader, moving, prefixing or leaving out a bundle's routes in config/routes with @as_routes, writing a route that needs a container service, injecting ServerRequestInterface or ResponseInterface, adding a request id or response header to every response, logging uncaught exceptions, turning an exception into a response, opening a per-request unit of work, contributing middleware from a bundle, listing routes with debug:router, rate limiting a route, or testing a served application. For plain FastAPI matters use the fastapi skill instead.
 ---
 
 # xtr-http-kernel
@@ -13,7 +13,10 @@ signatures. Everything the framework already does well is left alone.
 ## Quick reference
 
 - One call: `setup(app, kernel)` from `xtr_http_kernel`, after the routes and before the first
-  request.
+  request. It compiles the kernel once and adds every route bundles contribute.
+- Ship a bundle's routes with `@as_route_loader("resource")` on a class with `load_routes()`;
+  arrange them in `<app>/config/routes/*.py` with `@as_routes` functions. See
+  [Routes](#routes).
 - Pull a container service into a route with `Injected[T]`, `Annotated[T, Target("name")]` or
   `Annotated[T, Autowire(param=...)]`. Keep `Depends` for everything that is the framework's.
 - Take the request as a message with `Injected[ServerRequestInterface]`, the response with
@@ -47,15 +50,58 @@ kernel = Kernel("app", bundles={HttpKernelBundle: {"all": True}})
 setup(app, kernel)
 ```
 
-`setup` builds nothing. It wraps two seams:
+`setup` compiles the kernel once — no service is built, no I/O — and adds its route table to the
+application, so `app.routes` holds every route from then on. Configuration and the environment
+are read at that moment. Then it wraps two seams:
 
-- **The lifespan.** Every application life builds the kernel afresh, applies test overrides,
-  boots it, attaches the container so the route markers resolve, runs the app's own lifespan
-  inside, then detaches and shuts down.
+- **The lifespan.** The first life boots the kernel `setup` compiled; later lives build it
+  afresh. Each applies test overrides, boots, attaches the container so the route markers
+  resolve, runs the app's own lifespan inside, then detaches and shuts down.
 - **One middleware.** Fetches the kernel's `MiddlewareStack` once per life and runs every
   request through it, inside the request scope scoped services live in.
 
 Serve it with any ASGI server: `uvicorn app.web:app`.
+
+## Routes
+
+A bundle ships a route loader; it is built with no arguments while the kernel compiles, so what it
+contributes is fixed by its code:
+
+```python
+from xtr_http_kernel.routing import Route, RouteCollection
+from xtr_http_kernel.routing.decorator import as_route_loader
+
+
+async def list_books() -> list[str]:
+    return ["Dune"]
+
+
+@as_route_loader("books")
+class BooksRouteLoader:
+    def load_routes(self) -> RouteCollection:
+        routes = RouteCollection()
+        routes.add("books_list", Route("/books", list_books, methods=("GET",)))
+        return routes
+```
+
+The application arranges contributed routes in `<app>/config/routes/` (a package — xtr-recipes
+creates its `__init__.py` with the first routes file a recipe writes there):
+
+```python
+from xtr_http_kernel.routing.decorator import as_routes
+from xtr_http_kernel.routing.loader.configurator import RoutingConfigurator
+
+
+@as_routes
+def shop(routes: RoutingConfigurator) -> None:
+    routes.import_("books").prefix("/shop").name_prefix("shop_")
+    routes.add("shop_books_list", "/shop/catalogue")  # move one route by its name
+```
+
+A resource no routes file imports or skips is served at its own paths. A mistake fails `setup`
+with `InvalidArgumentError`; a contributed route sharing a name or a method and path with one the
+application declared fails it with `RouteConflictError`. Every configurator call and rule:
+[references/routing.md](references/routing.md).
 
 ## Inject services into a route
 
@@ -273,8 +319,8 @@ tests serving one application must not run at the same time.
 ## Use in an application
 
 `uv run xtr-recipes recipes:sync` applies the recipe shipped with this package: it lists
-`HttpKernelBundle`. That is the steps below a recipe can do; the `setup(app, kernel)` step it prints
-for you to make.
+`HttpKernelBundle`. That is the steps below a recipe can do; the `setup(app, kernel)` step it
+prints for you to make.
 
 1. **Install** `uv add "xtr-http-kernel[logging,console]"`. The extras: `logging` adds the
    listeners that write to a log, `console` the router commands, `rate-limiter` the rate limits.
@@ -286,8 +332,9 @@ for you to make.
 3. **Brings along** the event dispatcher bundle always; the logging, console and rate limiter
    bundles whenever those packages are installed. Installing the extra is what activates them,
    not listing.
-4. **Configure** nothing by default: a fresh `uuid4` id under `X-Request-Id` per request (an
-   inbound one is not trusted), no robots header, the `request` log channel.
+4. **Configure** nothing by default: a fresh `uuid4` id under
+   `X-Request-Id` per request (an inbound one is not trusted), no robots header, the `request`
+   log channel.
 
    ```python
    # <app>/config/http_kernel.py
@@ -332,8 +379,17 @@ All derive from `HttpKernelError`, and import from `xtr_http_kernel` or
 A route marker resolving with no kernel attached, or outside a request scope, raises
 `FastapiIntegrationError` from xtr-dependency-injection.
 
+The route table's errors import from `xtr_http_kernel.routing`, under `RoutingError` (an
+`HttpKernelError`): `InvalidArgumentError` (also the library's own, so a `ValueError`),
+`RouteConflictError`, `RouteCircularReferenceError` — see
+[references/routing.md](references/routing.md).
+
 ## Do not
 
+- Do not `app.include_router(...)` a bundle's routes by hand: `setup` adds them, and including
+  them again collides with them.
+- Do not give a route loader constructor parameters: it is built with none, before any service
+  exists.
 - Do not use `Depends` to reach a container service. Use `Injected[T]` or `Target("name")`, so
   the service stays out of the OpenAPI schema.
 - Do not call `attach`, `detach`, `request_scope`, `provider` or `current_connection` from

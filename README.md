@@ -105,14 +105,22 @@ bundle, one written above.
 
 ## What `setup` does
 
-`setup(app, kernel)` is the one call an application makes. It changes nothing about how routes
-are declared; it wraps two seams around them:
+`setup(app, kernel)` is the one call an application makes. It changes nothing about how the
+application's own routes are declared; it adds the routes bundles contribute and wraps two seams
+around them:
 
-- **The lifespan.** Every start of the application's lifespan builds the kernel afresh, boots
-  it — a built container boots once, and a test starts the application many times — and attaches
-  the container so the injection markers resolve in routes. The application's own lifespan runs
-  inside, its state passing through untouched; on the way out the container is detached and shut
-  down.
+- **The routes.** `setup` compiles the kernel once — nothing is booted and no service is built
+  — and adds its [route table](#routes) to the application with the framework's own
+  `include_router`. From then on the application holds every route it serves, so whatever
+  reads its routes — the [router commands](#router-commands), the API description,
+  `url_path_for` — sees them all without starting it. Configuration and the environment are
+  therefore read when `setup` runs, and a contributed route colliding with one the application
+  declared itself fails right there.
+- **The lifespan.** The first start of the application's lifespan boots the kernel `setup`
+  compiled; every later start builds it afresh — a built container boots once, and a test starts
+  the application many times. Each attaches the container so the injection markers resolve in
+  routes. The application's own lifespan runs inside, its state passing through untouched; on
+  the way out the container is detached and shut down.
 - **One middleware.** Added when `setup` is called, so **call it before the first request** —
   after the routes and the application's own middleware is fine. Each life fetches the
   [middleware stack](#middleware-from-a-bundle) the kernel's bundles contributed and runs every
@@ -523,9 +531,103 @@ application life and composes it over the application, inside the request scope.
 that is not an integer fails the build with `InvalidMiddlewarePriorityError`, naming the
 offending definition.
 
+## Routes
+
+A bundle ships its routes, and an application gets them served with no code in its entry point.
+The application arranges them in its routes files, and `setup` adds the result.
+
+### A bundle's routes
+
+A route loader is a class with `load_routes()`, declared with `@as_route_loader`. It names the
+*resource* an application imports its routes by:
+
+```python
+from xtr_http_kernel.routing import Route, RouteCollection
+from xtr_http_kernel.routing.decorator import as_route_loader
+
+
+async def list_books() -> list[str]:
+    return ["Dune"]
+
+
+@as_route_loader("books")
+class BooksRouteLoader:
+    def load_routes(self) -> RouteCollection:
+        routes = RouteCollection()
+        routes.add("books_list", Route("/books", list_books, methods=("GET",)))
+        return routes
+```
+
+The loader is built with no arguments while the kernel compiles, before any service exists, so
+what it contributes is fixed by the code that ships it. A route a deployment turns off keeps
+answering — its endpoint refuses — and an application that wants it gone leaves it out in a
+routes file. Pass `prefixable=False` for routes a standard puts at a fixed place, such as a
+`/.well-known/` document: no routes file may move them under a prefix. A loader is found like any
+other declaration: in the application's scan, or in a module a bundle scans with
+`services.load(...)`.
+
+A `Route` carries a path, the endpoint the framework calls — its `Injected[...]` parameters
+untouched — and the options handed to the framework as they are: `methods`,
+`include_in_schema`, `tags`, `summary`, `status_code`, `response_model`. Its name is the key it
+has in its `RouteCollection`. A mounted route validates, documents and is reached by
+`url_path_for` exactly like the same function declared on a router.
+
+### The application's routes files
+
+A routes file is a function declared `@as_routes` in `<app>/config/routes/`, receiving a
+`RoutingConfigurator`:
+
+```python
+from xtr_http_kernel.routing.decorator import as_routes
+from xtr_http_kernel.routing.loader.configurator import RoutingConfigurator
+
+
+@as_routes
+def shop(routes: RoutingConfigurator) -> None:
+    routes.import_("books").prefix("/shop").name_prefix("shop_")
+    routes.add("shop_books_list", "/shop/catalogue")  # move one route by its name
+    routes.add("home", "/").endpoint(home).methods("GET")
+
+
+async def home() -> dict[str, str]:
+    return {"page": "home"}
+```
+
+- `import_(resource)` brings in a resource's routes, arranged with `prefix`, `name_prefix` and
+  `exclude(*names)`; `skip(resource)` serves none of them. A resource no routes file imports or
+  skips is served at its own paths and names.
+- `add(name, path)` defines a route. Under a name already in the table it replaces that route:
+  without `.endpoint(...)` it moves the route and keeps the rest, with one it redefines it. Its
+  options — `methods`, `priority`, `tags`, `summary`, `status_code`, `include_in_schema`,
+  `response_model` — read like the `Route` fields.
+- `collection(name_prefix)` groups routes under one path prefix and name prefix;
+  `alias(name, target)` adds another name for a route, optionally `.deprecate(...)`d.
+- Nothing reaches the table while the file runs: every call is applied when it returns, in the
+  order written, so a route defined after an import replaces the imported one of that name.
+  Each file starts from the resources as their loaders returned them.
+
+A mistake is refused while the kernel compiles — so at `setup` — with an `InvalidArgumentError`
+naming it: an unknown resource or route, a prefix on fixed routes, a new route with no endpoint,
+two loaders claiming one resource. The kernel scans only packages, so `config/routes/` needs an
+`__init__.py`; xtr-recipes creates it with the first routes file a recipe writes there.
+
+### Collisions with the application's own routes
+
+The application's own routes are never changed, and they come first. A contributed route sharing
+a name with one the application declared, or one the application's routes would answer first —
+the same method and path under any parameter names, a catch-all, a mount, or a router the
+application included — fails `setup` with a `RouteConflictError` naming both; so do two
+contributed routes answering the same method and path. To change a contributed route on purpose,
+redefine it by its name in a routes file.
+
+An alias is mounted under its own name, out of the API description, so `url_path_for` reaches it.
+The table is also a service: `RouterInterface.get_route_collection()` returns a copy of what was
+mounted, the same on every start of the application, for code that reads a route by name.
+
 ## Router commands
 
-With a console bundle active, two commands read the application without serving it:
+With a console bundle active, two commands read the application without serving it — every
+route included, since `setup` added the contributed ones when the application was imported:
 
 - **`debug:router`** lists every route in the order routing tries them, prefixes and mounts
   applied.
@@ -541,7 +643,7 @@ routers.
 
 FastAPI's `TestClient` is unusable here: it leans on a deprecated framework path, and this
 package's test suite turns warnings into errors. Drive the application through an ASGI transport
-instead, inside its own lifespan so `setup`'s wrapper builds and boots the kernel:
+instead, inside its own lifespan so `setup`'s wrapper boots the kernel:
 
 ```python
 import httpx
@@ -562,7 +664,7 @@ async def test_a_book_carries_a_request_id() -> None:
 ```
 
 To swap a service for the span of a test, park the replacements on the application with
-`override_services` **before** entering the lifespan, so every kernel built while the block is
+`override_services` **before** entering the lifespan, so every kernel booted while the block is
 open — every boot hook, every route — sees them:
 
 ```python
@@ -598,6 +700,15 @@ itself, as well as from `xtr_http_kernel.exception`.
 | `UnknownRateLimiterError` | a `RateLimited` names a limiter the application did not configure; also a `LookupError` |
 | `UnsupportedConnectionError` | something asked for the request as a message while a WebSocket was being served |
 
+The route table's errors live in `xtr_http_kernel.routing`, under `RoutingError` — itself an
+`HttpKernelError`:
+
+| Error | Raised when |
+|---|---|
+| `InvalidArgumentError` | a routes file names an unknown resource or route, prefixes fixed routes, defines a route with no endpoint, or is `async`; one file skips a resource another imports; two loaders claim one resource, or two resources no file arranges contribute one name; a loader needs arguments or has an `async` `load_routes`; an alias is refused. Also the library's own `InvalidArgumentError`, so a `ValueError` |
+| `RouteConflictError` | `setup` finds a contributed route sharing a name with one the application declared, or answered first by one of the application's routes, or answering the same method and path as another contributed route |
+| `RouteCircularReferenceError` | aliases lead back to a name they already passed |
+
 ## Layout
 
 ```
@@ -612,6 +723,7 @@ xtr_http_kernel/
 ├── middleware_stack.py             the ordered chain a bundle contributes to
 ├── middleware_tag.py               MIDDLEWARE_TAG, the tag bundles agree on
 ├── rate_limiter/                   RateLimited, with the rate-limiter extra
+├── routing/                        Route, RouteCollection, Router, the loaders and configurators
 ├── command/                        debug:router and router:match
 ├── exception/                      HttpKernelError, the root of everything this library raises
 └── bundle/                         HttpKernelBundle and HttpKernelConfig

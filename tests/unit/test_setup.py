@@ -57,12 +57,12 @@ def builds(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return journal
 
 
-def test_setup_builds_nothing_at_call_time(builds: list[str]) -> None:
+def test_setup_builds_the_kernel_once_to_read_its_routes(builds: list[str]) -> None:
     app = FastAPI()
 
     setup(app, _kernel())
 
-    assert builds == []
+    assert builds == ["build"]
 
 
 def test_setup_adds_exactly_one_middleware() -> None:
@@ -74,12 +74,15 @@ def test_setup_adds_exactly_one_middleware() -> None:
     assert names == ["KernelMiddleware"]
 
 
-async def test_every_application_life_builds_a_fresh_kernel(builds: list[str]) -> None:
+async def test_the_first_life_boots_the_kernel_setup_built_and_later_ones_build_afresh(
+    builds: list[str],
+) -> None:
     app = FastAPI()
     setup(app, _kernel())
 
     async with app.router.lifespan_context(app):
         pass
+    assert builds == ["build"]
     async with app.router.lifespan_context(app):
         pass
 

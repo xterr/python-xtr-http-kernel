@@ -11,7 +11,7 @@ from starlette.routing import Mount, WebSocketRoute
 if TYPE_CHECKING:
     from starlette.routing import BaseRoute
 
-    from ._route_contexts import RouteView
+    from xtr_http_kernel._route_contexts import RouteView
 
 __all__ = ["RouteDescription"]
 

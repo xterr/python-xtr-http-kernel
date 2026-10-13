@@ -1,9 +1,10 @@
 """Swapping services in a served application, for the span of a test.
 
-The setup call builds a kernel at every start of the application's
-lifespan; :func:`override_services` parks a mapping on the application for
-those builds to apply, so every boot hook and every route already sees the
-replacements. Enter the block before starting the application's lifespan.
+Every start of the application's lifespan boots a compiled kernel — the one
+the setup call built, then a fresh one each time; :func:`override_services`
+parks a mapping on the application for each start to apply before it boots,
+so every boot hook and every route already sees the replacements. Enter the
+block before starting the application's lifespan.
 """
 
 from __future__ import annotations

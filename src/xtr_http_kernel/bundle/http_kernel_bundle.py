@@ -39,10 +39,16 @@ from xtr_http_kernel.event_listener import (
 from xtr_http_kernel.exception import InvalidMiddlewarePriorityError
 from xtr_http_kernel.middleware_stack import MiddlewareStack
 from xtr_http_kernel.middleware_tag import MIDDLEWARE_TAG
+from xtr_http_kernel.routing.decorator.as_route_loader import route_loaders_of
+from xtr_http_kernel.routing.decorator.as_routes import routes_files_of
+from xtr_http_kernel.routing.router import Router
+from xtr_http_kernel.routing.router_interface import RouterInterface
 
 from ._messages import register as register_messages
+from ._routing import router
 from .http_kernel_config import HttpKernelConfig
 from .request_lifecycle_middleware_factory import RequestLifecycleMiddlewareFactory
+from .routing_resolver_pass import RoutingResolverPass
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
@@ -50,6 +56,9 @@ if TYPE_CHECKING:
     from xtr_dependency_injection import ContainerBuilder, ServiceConfigurator
 
     from xtr_http_kernel.middleware_stack import MiddlewareFactory
+    from xtr_http_kernel.routing.decorator.as_routes import RoutesFile
+    from xtr_http_kernel.routing.decorator.route_loader_marker import RouteLoaderMarker
+    from xtr_http_kernel.routing.route_loader_interface import RouteLoaderInterface
 
 __all__ = ["HttpKernelBundle"]
 
@@ -69,6 +78,39 @@ _UNIT_CLOSE_PRIORITY: Final = -8192
 @as_bundle("http_kernel", config=HttpKernelConfig)
 class HttpKernelBundle(Bundle[HttpKernelConfig]):
     """Puts the request lifecycle's services under the container."""
+
+    def __init__(self) -> None:
+        """Start with nothing found; each build's scan fills its own lists."""
+        self._route_loaders: list[tuple[type[RouteLoaderInterface], RouteLoaderMarker]] = []
+        self._routes_files: list[RoutesFile] = []
+
+    @override
+    def build(self, builder: ContainerBuilder) -> None:
+        """Collect route loaders and routes files from what is scanned, and build the table.
+
+        A class declared with ``@as_route_loader`` and a function declared with
+        ``@as_routes`` are kept, in scan order; the routing pass turns them
+        into the route table while the kernel compiles.
+        """
+        loaders, files = self._route_loaders, self._routes_files
+
+        def register_loader(
+            obj: object, marker: RouteLoaderMarker, services: ServiceConfigurator
+        ) -> None:
+            del services
+            if isinstance(obj, type):
+                # Only @as_route_loader writes the marker, after checking load_routes.
+                loaders.append((cast("type[RouteLoaderInterface]", obj), marker))
+
+        def register_routes_file(
+            obj: object, file: RoutesFile, services: ServiceConfigurator
+        ) -> None:
+            del obj, services
+            files.append(file)
+
+        builder.register_attribute_for_autoconfiguration(route_loaders_of, register_loader)
+        builder.register_attribute_for_autoconfiguration(routes_files_of, register_routes_file)
+        builder.add_compiler_pass(RoutingResolverPass(loaders, files))
 
     @override
     def prepend_extension(self, builder: ContainerBuilder) -> None:
@@ -96,6 +138,8 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
         graph of an application that never runs one.
         """
         register_messages(services)
+        _ = services.set(router)
+        services.alias(RouterInterface, Router)
         _ = services.set(RequestLifecycleMiddlewareFactory).add_tag(
             MIDDLEWARE_TAG, priority=config.middleware_priority
         )

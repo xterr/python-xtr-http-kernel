@@ -63,3 +63,25 @@ async def test_without_a_console_the_commands_stay_out_of_the_container(
     async with await _kernel().boot() as booted:
         assert not booted.container.has(DebugRouterCommand)
         assert not booted.container.has(RouterMatchCommand)
+
+
+async def test_the_listing_shows_the_routes_bundles_contribute() -> None:
+    style, buffer = _capture()
+    async with await _kernel().boot() as booted:
+        command = await booted.container.get(DebugRouterCommand)
+        assert await command(style, app="tests.fixtures.routing.apps:app") == ExitCode.SUCCESS
+
+    listing = buffer.getvalue()
+    assert "/own" in listing
+    assert "books_list" in listing
+    assert "/.well-known/metadata" in listing
+
+
+async def test_matching_finds_a_route_a_bundle_contributes() -> None:
+    style, buffer = _capture()
+    async with await _kernel().boot() as booted:
+        command = await booted.container.get(RouterMatchCommand)
+        code = await command(style, "/books/7", app="tests.fixtures.routing.apps:app")
+
+    assert code == ExitCode.SUCCESS
+    assert "books_show" in buffer.getvalue()

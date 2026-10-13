@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from tests.fixtures.router_app.app import app
-from xtr_http_kernel.command._route_contexts import route_contexts
+from xtr_http_kernel._route_contexts import route_contexts
 
 PREFIXED_PATH = "/books/{isbn}"
 """The fixture application's one route reached through an included router."""

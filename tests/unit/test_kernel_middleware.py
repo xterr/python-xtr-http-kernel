@@ -8,13 +8,13 @@ opener and downstream app.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pytest
 from fastapi import FastAPI
-from xtr_dependency_injection import Kernel
 
-from xtr_http_kernel import MiddlewareStack, setup
+from xtr_http_kernel import MiddlewareStack
+from xtr_http_kernel._kernel_middleware import KernelMiddleware
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable
@@ -47,10 +47,7 @@ class ScopeJournal:
 
 
 def _kernel_middleware(downstream: ASGIApp, opener: ScopeJournal) -> ASGIApp:
-    shell = FastAPI()
-    setup(shell, Kernel("tests.fixtures.served_app", env="test", bundles={}))
-    cls = cast("Callable[..., ASGIApp]", shell.user_middleware[0].cls)
-    return cls(downstream, open_scope=opener)
+    return KernelMiddleware(downstream, open_scope=opener)
 
 
 def _downstream(journal: list[str]) -> ASGIApp:

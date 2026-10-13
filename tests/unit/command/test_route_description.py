@@ -8,7 +8,7 @@ from starlette.routing import BaseRoute, Host, Mount, Route, Router, WebSocketRo
 
 from tests.fixtures.router_app.app import app
 from tests.support.route_listing import lists_included_routers
-from xtr_http_kernel.command._route_contexts import RouteView, route_contexts
+from xtr_http_kernel._route_contexts import RouteView, route_contexts
 from xtr_http_kernel.command.route_description import RouteDescription
 
 

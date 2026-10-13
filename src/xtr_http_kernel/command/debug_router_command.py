@@ -6,7 +6,8 @@ from typing import final
 
 from xtr_console import ConsoleStyle, ExitCode, as_command, escape
 
-from ._route_contexts import route_contexts
+from xtr_http_kernel._route_contexts import route_contexts
+
 from .route_description import RouteDescription
 from .router_command import RouterCommand
 

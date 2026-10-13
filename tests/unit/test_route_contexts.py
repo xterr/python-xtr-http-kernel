@@ -16,7 +16,7 @@ from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 from starlette.routing import BaseRoute, Host, Match, Mount, Route, Router, WebSocketRoute
 
-from xtr_http_kernel.command._route_contexts import route_contexts
+from xtr_http_kernel._route_contexts import route_contexts
 
 if TYPE_CHECKING:
     from starlette.types import Scope
