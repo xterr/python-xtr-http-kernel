@@ -137,20 +137,28 @@ def test_a_cookie_the_framework_sets_reaches_the_message() -> None:
     assert "city=Lille" in response.get_header("set-cookie")[0]
 
 
-def test_the_body_the_framework_reads_is_the_one_the_message_holds() -> None:
-    response = Response()
-
-    _ = response.get_body().write(b"written")
-
-    assert response.body == b"written"
+def test_there_is_no_body_to_read_off_the_response() -> None:
+    # Reading a body is awaited, so no property hands one back: a reader
+    # looking the framework's way finds nothing, and get_body() is the way in.
+    assert getattr(Response(), "body", None) is None
 
 
-def test_a_body_the_framework_writes_reaches_the_message() -> None:
+async def test_a_body_the_framework_writes_reaches_the_message() -> None:
     response = Response()
 
     response.body = b"assigned"
 
-    assert bytes(response.get_body()) == b"assigned"
+    assert await response.get_body().get_contents() == b"assigned"
+
+
+async def test_an_empty_body_the_framework_writes_replaces_what_the_message_held() -> None:
+    response = Response()
+    _ = await response.get_body().write(b"written")
+
+    # What the framework assigns a response whose status allows no body.
+    response.body = b""
+
+    assert await response.get_body().get_contents() == b""
 
 
 def test_a_response_keeps_its_background_task_through_a_change() -> None:
@@ -273,7 +281,7 @@ async def test_what_goes_out_are_the_headers_the_message_holds_when_it_is_sent()
 async def test_a_body_written_after_the_response_was_made_is_the_body_sent() -> None:
     response = Response()
 
-    _ = response.get_body().write(b'{"id": 7}')
+    _ = await response.get_body().write(b'{"id": 7}')
     messages = await sent(response)
 
     assert body_of(messages) == b'{"id": 7}'
@@ -281,7 +289,7 @@ async def test_a_body_written_after_the_response_was_made_is_the_body_sent() -> 
 
 async def test_the_length_of_a_body_of_known_length_is_declared() -> None:
     response = Response()
-    _ = response.get_body().write(b'{"id": 7}')
+    _ = await response.get_body().write(b'{"id": 7}')
 
     messages = await sent(response)
 
@@ -290,7 +298,7 @@ async def test_the_length_of_a_body_of_known_length_is_declared() -> None:
 
 async def test_a_length_the_message_declares_is_the_only_one_sent() -> None:
     response = Response().with_header("content-length", "4")
-    _ = response.get_body().write(b'{"id": 7}')
+    _ = await response.get_body().write(b'{"id": 7}')
 
     messages = await sent(response)
 
@@ -329,7 +337,7 @@ async def test_a_body_of_unknown_length_goes_out_in_chunks(pipe: BinaryIO) -> No
 
 async def test_a_body_that_cannot_be_read_goes_out_empty() -> None:
     response = Response()
-    response.get_body().close()
+    await response.get_body().close()
 
     messages = await sent(response)
 

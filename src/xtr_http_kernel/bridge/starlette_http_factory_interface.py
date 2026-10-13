@@ -19,9 +19,12 @@ class StarletteHttpFactoryInterface(Protocol):
     The other direction of the bridge: a message made elsewhere — by a library
     that knows only the contract, or by a test — becomes something the
     framework can route or send.
+
+    Both builds are awaited: a message carries its body as a stream, and
+    reading one is awaited.
     """
 
-    def create_request(
+    async def create_request(
         self,
         server_request: ServerRequestInterface,
         streamed: bool = False,
@@ -38,7 +41,7 @@ class StarletteHttpFactoryInterface(Protocol):
         """
         ...
 
-    def create_response(
+    async def create_response(
         self,
         response: ResponseInterface,
         streamed: bool = False,

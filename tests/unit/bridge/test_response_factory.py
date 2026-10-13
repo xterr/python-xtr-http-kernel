@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
 from xtr_http_message_contracts.factory import ResponseFactoryInterface
 
 from xtr_http_kernel.bridge import Response, ResponseFactory
+
+pytestmark = pytest.mark.anyio
 
 
 def test_the_factory_is_a_response_factory() -> None:
@@ -37,7 +40,7 @@ def test_a_status_with_no_recommended_phrase_carries_none() -> None:
     assert ResponseFactory().create_response(599).get_reason_phrase() == ""
 
 
-def test_a_response_starts_with_no_header_and_no_body() -> None:
+async def test_a_response_starts_with_no_header_and_no_body() -> None:
     response = ResponseFactory().create_response()
 
-    assert (dict(response.get_headers()), bytes(response.get_body())) == ({}, b"")
+    assert (dict(response.get_headers()), await response.get_body().get_contents()) == ({}, b"")

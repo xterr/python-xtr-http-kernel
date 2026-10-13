@@ -47,7 +47,7 @@ class Response(StarletteResponse, ResponseInterface):
     ```python
     @app.post("/books")
     async def add(response: Injected[Response]) -> Response:
-        _ = response.get_body().write(b'{"id": 7}')
+        _ = await response.get_body().write(b'{"id": 7}')
         return response.with_status(201).with_header("content-type", "application/json")
     ```
 
@@ -62,7 +62,7 @@ class Response(StarletteResponse, ResponseInterface):
     stream can say how long it is, and otherwise the body goes out a chunk at
     a time with no length at all.
 
-    The framework reads four things off a response it is handed —
+    The framework reaches for four things on a response it is handed —
     ``status_code``, ``headers`` and ``raw_headers``, ``body``, and
     ``background``. The first three are views of the message rather than
     copies of it, so none of them can fall out of step with what will be
@@ -72,6 +72,9 @@ class Response(StarletteResponse, ResponseInterface):
     through it and leaves it holding what the message now says — so a
     ``MutableHeaders`` built on it keeps working however the two sides are
     interleaved.
+    ``body`` is the one the framework only writes: assigning replaces the
+    body, which is what it does to a response whose status allows none, while
+    reading a body is awaited and so belongs to :meth:`get_body`.
     ``background`` is the framework's own and is kept as it sets it. A
     response made from this one by a ``with_*`` method is another of these,
     carrying the same background task.
@@ -87,8 +90,8 @@ class Response(StarletteResponse, ResponseInterface):
         """Build a response carrying ``status``, with no header and no body yet.
 
         Headers and a body are written afterwards — ``with_header`` and
-        ``get_body().write(...)`` — which is what an endpoint handed one of
-        these does. To send a message built somewhere else, convert it with
+        ``await get_body().write(...)`` — which is what an endpoint handed one
+        of these does. To send a message built somewhere else, convert it with
         :class:`~xtr_http_kernel.bridge.StarletteHttpFactory` instead.
 
         The framework's own constructor is deliberately not called: it renders
@@ -320,15 +323,19 @@ class Response(StarletteResponse, ResponseInterface):
         """The headers as a mapping the framework can read and change."""
         return MutableHeaders(raw=self.raw_headers)
 
-    @property
-    def body(self) -> bytes:
-        """Everything in the body, read from the first byte to the last."""
-        return bytes(self._settled().get_body())
-
-    @body.setter
-    def body(self, payload: bytes) -> None:  # pyright: ignore[reportIncompatibleUnannotatedOverride] — a view of the message's body, not a field of its own; see the class docstring.
+    def _replace_body(self, payload: bytes) -> None:
         """Make ``payload`` the whole body, replacing the stream it had."""
         self._message = self._settled().with_body(Stream.create(payload))
+
+    body = property(fset=_replace_body)  # pyright: ignore[reportIncompatibleUnannotatedOverride] — a view of the message's body, not a field of its own; see the class docstring.
+    """The body as the framework writes it, and only writes it.
+
+    There is no getter: reading a body is awaited and a property cannot be,
+    so reading this raises as any missing attribute does, and
+    :meth:`get_body` is the way to a body. Assigning replaces the body with a
+    stream over the bytes given, which is what the framework does to a
+    response whose status allows none.
+    """
 
     @override
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -360,18 +367,18 @@ class Response(StarletteResponse, ResponseInterface):
     async def _send_body(self, body: StreamInterface, send: Send) -> None:
         """Send the body, a chunk at a time, ending with the chunk that says so."""
         if body.is_seekable():
-            body.rewind()
+            await body.rewind()
 
         if not body.is_readable():
-            # Nothing to read from, which the stream itself answers for safely.
-            await send({"type": "http.response.body", "body": bytes(body)})
+            # Nothing to read from, so nothing goes out.
+            await send({"type": "http.response.body", "body": b""})
             return
 
         # The end is the read that comes back with nothing, and only that: a
         # pipe, a socket or any unbuffered source answers a read with what has
         # arrived so far, which is routinely less than was asked for.
         while True:
-            chunk = body.read(_CHUNK_LENGTH)
+            chunk = await body.read(_CHUNK_LENGTH)
             if chunk == b"":
                 break
             await send({"type": "http.response.body", "body": chunk, "more_body": True})

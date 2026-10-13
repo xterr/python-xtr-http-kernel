@@ -58,7 +58,7 @@ def _application() -> FastAPI:
 
     @app.post("/answer")
     async def answer(response: Injected[Response]) -> Response:
-        _ = response.get_body().write(b'{"id": 7}')
+        _ = await response.get_body().write(b'{"id": 7}')
         return (
             response.with_status(201)
             .with_header("content-type", "application/json")
@@ -67,7 +67,7 @@ def _application() -> FastAPI:
 
     @app.get("/bare")
     async def bare(response: Injected[Response]) -> Response:
-        _ = response.get_body().write(b"plain")
+        _ = await response.get_body().write(b"plain")
         return response
 
     @app.get("/same")
@@ -76,7 +76,7 @@ def _application() -> FastAPI:
         contract: Injected[ResponseInterface],
     ) -> Response:
         SEEN.append(response)
-        _ = response.get_body().write(b"same" if response is contract else b"two")
+        _ = await response.get_body().write(b"same" if response is contract else b"two")
         return response
 
     @app.get("/from-factory")
@@ -106,7 +106,7 @@ def _application() -> FastAPI:
     @app.get("/background")
     async def background(tasks: BackgroundTasks, response: Injected[Response]) -> Response:
         tasks.add_task(_note, "task")
-        _ = response.get_body().write(b"queued")
+        _ = await response.get_body().write(b"queued")
         return response
 
     setup(app, message_kernel())

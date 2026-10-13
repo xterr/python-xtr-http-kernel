@@ -77,7 +77,7 @@ def _application() -> FastAPI:
 
     @app.post("/asked-streamed")
     async def asked_streamed(message: Injected[ServerRequestInterface]) -> dict[str, int]:
-        return {"length": len(bytes(message.get_body()))}
+        return {"length": len(await message.get_body().get_contents())}
 
     setup(app, message_kernel())
     return app

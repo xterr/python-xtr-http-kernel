@@ -123,7 +123,7 @@ async def test_the_request_of_a_request_is_built_from_the_connection_being_serve
     message = await anext(building)
     await _finished(building)
 
-    assert (message.get_method(), bytes(message.get_body())) == ("POST", b"Content")
+    assert (message.get_method(), await message.get_body().get_contents()) == ("POST", b"Content")
 
 
 async def test_the_request_is_built_once_for_the_whole_scope(
@@ -187,7 +187,7 @@ async def test_a_submitted_file_is_readable_while_the_request_is_being_served(
     message = await anext(building)
 
     one = cast("UploadedFileInterface", message.get_uploaded_files()["f1"])
-    read = bytes(one.get_stream())
+    read = await one.get_stream().get_contents()
     await _finished(building)
 
     assert read == b"F1"

@@ -54,11 +54,18 @@ def _application() -> FastAPI:
         title: Annotated[str, Form()],
         message: Injected[ServerRequestInterface],
     ) -> dict[str, object]:
-        return {"title": title, "fields": _fields_of(message), "body": bytes(message.get_body())}
+        return {
+            "title": title,
+            "fields": _fields_of(message),
+            "body": await message.get_body().get_contents(),
+        }
 
     @app.post("/message-first")
     async def message_first(message: Injected[ServerRequestInterface]) -> dict[str, object]:
-        return {"fields": _fields_of(message), "body": bytes(message.get_body())}
+        return {
+            "fields": _fields_of(message),
+            "body": await message.get_body().get_contents(),
+        }
 
     @app.post("/files")
     async def files(message: Injected[ServerRequestInterface]) -> dict[str, object]:
@@ -69,7 +76,7 @@ def _application() -> FastAPI:
             "name": doc.get_client_filename(),
             "type": doc.get_client_media_type(),
             "size": doc.get_size(),
-            "content": bytes(doc.get_stream()).decode(),
+            "content": (await doc.get_stream().get_contents()).decode(),
         }
 
     setup(app, message_kernel())

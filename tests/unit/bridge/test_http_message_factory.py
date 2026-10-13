@@ -79,7 +79,7 @@ async def created(factory: HttpMessageFactory) -> ServerRequestInterface:
 
 
 async def test_the_body_is_what_the_framework_read(created: ServerRequestInterface) -> None:
-    assert bytes(created.get_body()) == b"Content"
+    assert await created.get_body().get_contents() == b"Content"
 
 
 async def test_the_body_can_still_be_read_off_the_framework_request_afterwards(
@@ -89,7 +89,10 @@ async def test_the_body_can_still_be_read_off_the_framework_request_afterwards(
 
     message = await factory.create_request(request)
 
-    assert (bytes(message.get_body()), await request.body()) == (b"Content", b"Content")
+    assert (await message.get_body().get_contents(), await request.body()) == (
+        b"Content",
+        b"Content",
+    )
 
 
 async def test_the_query_parameters_are_the_frameworks_own_object(
@@ -277,7 +280,7 @@ async def test_a_form_leaves_the_body_of_the_message_empty(factory: HttpMessageF
         )
     )
 
-    assert bytes(message.get_body()) == b""
+    assert await message.get_body().get_contents() == b""
 
 
 @pytest.fixture
@@ -306,7 +309,7 @@ async def test_a_submitted_file_is_an_uploaded_file(submitted: ServerRequestInte
     one = _one(submitted.get_uploaded_files()["f1"])
 
     assert (
-        bytes(one.get_stream()),
+        await one.get_stream().get_contents(),
         one.get_client_filename(),
         one.get_client_media_type(),
         one.get_error(),
@@ -323,10 +326,9 @@ async def test_a_field_submitted_twice_carries_both_files(
     both = submitted.get_uploaded_files()["docs"]
 
     assert isinstance(both, tuple)
-    assert [bytes(_one(one).get_stream()) for one in cast("tuple[object, ...]", both)] == [
-        b"F2",
-        b"F3",
-    ]
+    assert [
+        await _one(one).get_stream().get_contents() for one in cast("tuple[object, ...]", both)
+    ] == [b"F2", b"F3"]
 
 
 async def test_a_field_submitted_with_no_file_says_so(submitted: ServerRequestInterface) -> None:
@@ -343,14 +345,14 @@ async def test_a_plain_field_is_in_the_parsed_body(submitted: ServerRequestInter
     assert cast("FormData", submitted.get_parsed_body())["baz"] == "2"
 
 
-def test_a_response_arrives_as_a_message(factory: HttpMessageFactory) -> None:
+async def test_a_response_arrives_as_a_message(factory: HttpMessageFactory) -> None:
     response = Response("Response content.", 202, {"x-books": "3.4", " x-broken-header": "abc"})
     response.set_cookie("city", "Lille", httponly=True)
 
     message = factory.create_response(response)
 
     assert (
-        bytes(message.get_body()),
+        await message.get_body().get_contents(),
         message.get_status_code(),
         message.get_header("x-books"),
         message.has_header("x-broken-header"),
@@ -376,22 +378,26 @@ def test_a_cookie_set_on_a_response_travels_as_the_header_it_is(
     assert "HttpOnly" in header
 
 
-def test_a_json_response_arrives_as_the_bytes_it_rendered(factory: HttpMessageFactory) -> None:
+async def test_a_json_response_arrives_as_the_bytes_it_rendered(
+    factory: HttpMessageFactory,
+) -> None:
     message = factory.create_response(JSONResponse({"city": "Paris"}))
 
-    assert (bytes(message.get_body()), message.get_header_line("content-type")) == (
+    assert (await message.get_body().get_contents(), message.get_header_line("content-type")) == (
         b'{"city":"Paris"}',
         "application/json",
     )
 
 
-def test_a_file_response_is_read_from_its_file(factory: HttpMessageFactory, tmp_path: Path) -> None:
+async def test_a_file_response_is_read_from_its_file(
+    factory: HttpMessageFactory, tmp_path: Path
+) -> None:
     path = tmp_path / "binary.bin"
     _ = path.write_bytes(b"Binary")
 
     body = factory.create_response(FileResponse(path)).get_body()
-    read = bytes(body)
-    body.close()
+    read = await body.get_contents()
+    await body.close()
 
     assert read == b"Binary"
 

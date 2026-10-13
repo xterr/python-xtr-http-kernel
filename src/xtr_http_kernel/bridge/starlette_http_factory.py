@@ -119,13 +119,23 @@ def _receive_whole(payload: bytes) -> Receive:
     return receive
 
 
-def _receive_chunks(body: StreamInterface, length: int) -> Receive:
+async def _whole(body: StreamInterface) -> bytes:
+    """Return every byte of ``body``, or none at all where there is nothing to read.
+
+    A body that cannot be read is no body as far as the framework is
+    concerned: it is handed over as empty bytes rather than reported, since
+    there is nothing left to send and nothing to say about it.
+    """
+    return await body.get_contents() if body.is_readable() else b""
+
+
+async def _receive_chunks(body: StreamInterface, length: int) -> Receive:
     """Return a receive channel reading ``body`` a chunk at a time, as it is asked for."""
     if body.is_seekable():
-        body.rewind()
+        await body.rewind()
 
     async def receive() -> Message:
-        chunk = body.read(length) if body.is_readable() else b""
+        chunk = await body.read(length) if body.is_readable() else b""
 
         return {"type": "http.request", "body": chunk, "more_body": chunk != b""}
 
@@ -135,18 +145,18 @@ def _receive_chunks(body: StreamInterface, length: int) -> Receive:
 async def _chunks(body: StreamInterface, length: int) -> AsyncIterator[bytes]:
     """Yield ``body`` a chunk at a time, from its first byte to its last."""
     if body.is_seekable():
-        body.rewind()
+        await body.rewind()
 
     if not body.is_readable():
-        # Nothing to read from, which the stream itself answers for safely.
-        yield bytes(body)
+        # Nothing to read from, so nothing goes out.
+        yield b""
         return
 
     # The end is the read that comes back with nothing, and only that: a pipe,
     # a socket or any unbuffered source answers a read with what has arrived
     # so far, which is routinely less than was asked for.
     while True:
-        chunk = body.read(length)
+        chunk = await body.read(length)
         if chunk == b"":
             break
         yield chunk
@@ -157,8 +167,11 @@ class StarletteHttpFactory(StarletteHttpFactoryInterface):
     """Builds the framework's own request and response out of HTTP messages.
 
     ```python
-    sendable = factory.create_response(message)
+    sendable = await factory.create_response(message)
     ```
+
+    Both builds are awaited: the body of a message is a stream, and reading
+    one is awaited.
 
     A request's components are the connection the framework reads them off:
     the URI becomes the scheme, the path, the query string and the address,
@@ -186,7 +199,7 @@ class StarletteHttpFactory(StarletteHttpFactoryInterface):
         self._buffer_length = buffer_length
 
     @override
-    def create_request(
+    async def create_request(
         self,
         server_request: ServerRequestInterface,
         streamed: bool = False,
@@ -248,11 +261,13 @@ class StarletteHttpFactory(StarletteHttpFactoryInterface):
 
         return Request(
             scope,
-            _receive_chunks(body, self._buffer_length) if streamed else _receive_whole(bytes(body)),
+            await _receive_chunks(body, self._buffer_length)
+            if streamed
+            else _receive_whole(await _whole(body)),
         )
 
     @override
-    def create_response(
+    async def create_response(
         self,
         response: ResponseInterface,
         streamed: bool = False,
@@ -283,7 +298,7 @@ class StarletteHttpFactory(StarletteHttpFactoryInterface):
         built: Response = (
             StreamingResponse(_chunks(body, self._buffer_length), status_code=status)
             if streamed
-            else Response(bytes(body), status_code=status)
+            else Response(await _whole(body), status_code=status)
         )
 
         headers = raw_headers(without_cookies)
