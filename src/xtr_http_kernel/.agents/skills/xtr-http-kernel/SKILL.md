@@ -140,7 +140,7 @@ async def issue(
     request: Injected[ServerRequestInterface],
     response: Injected[Response],
 ) -> Response:
-    _ = response.get_body().write(await issuer.issue(request))
+    _ = await response.get_body().write(await issuer.issue(request))
     return response.with_status(201).with_header("content-type", "application/json")
 ```
 
@@ -152,8 +152,10 @@ async def issue(
   both ends, so parameter and return annotation agree with nothing to narrow, and a library
   that knows only the contract is handed that very object.
 - The injected response *is* a FastAPI response, so return it as it is. Its status, headers and
-  body are read when it is sent, so a body written after it was handed over is the body sent;
-  the request id header and every `ResponseEvent` listener still apply.
+  body are read when it is sent, so a body written with
+  `await response.get_body().write(...)` after it was handed over is the body sent; the request
+  id header and every `ResponseEvent` listener still apply. Read a body back through the message,
+  with `await response.get_body().get_contents()`.
 - **Every response in an application comes from one of two places**: the injected
   response, or the injected response factory. Every response that factory makes, and every
   response a `with_*` on either returns, is `xtr_http_kernel.bridge.Response`
@@ -165,7 +167,7 @@ async def issue(
   a request**: those classes know nothing of this framework, so one returned from a route is not
   something it can send. They are for code outside a served application — tests, workers,
   console commands. A message that arrived from there is sent with
-  `StarletteHttpFactoryInterface.create_response(message)`.
+  `await StarletteHttpFactoryInterface.create_response(message)`.
 - `get_query_params()` and the parsed body of a submitted form are the framework's own
   `QueryParams` and `FormData`, so `getlist("a")` works and `items[]` is that name literally.
   Uploaded files wrap what the framework parsed where it lies; a field with no file reports

@@ -209,7 +209,7 @@ async def issue(
     request: Injected[ServerRequestInterface],
     response: Injected[Response],
 ) -> Response:
-    _ = response.get_body().write(await issuer.issue(request))
+    _ = await response.get_body().write(await issuer.issue(request))
     return response.with_status(201).with_header("content-type", "application/json")
 ```
 
@@ -225,8 +225,10 @@ async def issue(
   that knows only the contract asks for `ResponseInterface` and is handed that very response.
 - **Returned as it is.** The injected response is `xtr_http_kernel.bridge.Response`: an
   HTTP message *and* a FastAPI response. Return it and it goes out — status, headers and
-  body read at the moment of sending, so a body written through `get_body().write(...)` after
-  the response was handed over is the body on the wire. The request id header and every
+  body read at the moment of sending, so a body written through
+  `await response.get_body().write(...)` after the response was handed over is the body on the
+  wire. Assigning `response.body = ...` sets the body too; the body is read back through the
+  message, with `await response.get_body().get_contents()`. The request id header and every
   `ResponseEvent` listener still apply to it, like any other response.
 - **Every response in an application comes from one of those two.** Either it is the injected
   response, or the injected response factory made it — and every response that factory makes,
@@ -281,13 +283,13 @@ one:
 | Service | Does |
 |---|---|
 | `HttpMessageFactoryInterface` | `await create_request(request)` and `create_response(response)`: the framework's own, as messages |
-| `StarletteHttpFactoryInterface` | `create_request(message, streamed=False)` and `create_response(message, streamed=False)`: a message, as the framework's own |
+| `StarletteHttpFactoryInterface` | `await create_request(message, streamed=False)` and `await create_response(message, streamed=False)`: a message, as the framework's own |
 
 A response that arrived from outside the application — one a worker built with
 `xtr_http_message.Response(...)`, say — is sent by converting it with
-`StarletteHttpFactoryInterface.create_response(...)`; `streamed=True` sends the body in chunks
-instead of whole. That conversion is for a message that *came from elsewhere*; a response the
-application itself is answering with comes from the injected `ResponseFactoryInterface` or is
+`await StarletteHttpFactoryInterface.create_response(...)`; `streamed=True` sends the body in
+chunks instead of whole. That conversion is for a message that *came from elsewhere*; a response
+the application itself is answering with comes from the injected `ResponseFactoryInterface` or is
 the injected `ResponseInterface`, and needs no conversion at all.
 
 Neither direction alters what it is handed: where it cannot carry something across, it says so.
