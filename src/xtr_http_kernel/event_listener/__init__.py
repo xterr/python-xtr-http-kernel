@@ -6,8 +6,8 @@ page out of a search index, a unit of work per request. The bundle registers
 them; outside a container each is an ordinary object to register by hand.
 
 :class:`~xtr_http_kernel.event_listener.log_unit_listener.LogUnitListener`
-is not re-exported here: it needs the optional logging extra, so it is
-imported from its own module by whoever knows that extra is installed.
+is not re-exported here: it needs xtr-logging, which is optional, so it is
+imported from its own module by whoever knows xtr-logging is installed.
 """
 
 from __future__ import annotations

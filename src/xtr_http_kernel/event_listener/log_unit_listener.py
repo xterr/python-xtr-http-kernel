@@ -1,7 +1,7 @@
 """Each request framed as one unit of work for the logging package.
 
-This module needs the optional logging extra: it is deliberately left out of
-the package's eager re-exports, and the bundle registers the listener only
+This module needs xtr-logging, which is optional: it is deliberately left out
+of the package's eager re-exports, and the bundle registers the listener only
 when the logging bundle is active.
 """
 

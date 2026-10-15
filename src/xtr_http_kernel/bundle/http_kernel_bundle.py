@@ -162,8 +162,8 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
             .add_tag(LISTENER_TAG, event=ResponseEvent, method="on_response")
         )
         if bundle_active(builder, "logging"):
-            # Needs the optional logging extra, which being here proves installed.
-            from xtr_http_kernel.event_listener.log_unit_listener import (  # noqa: PLC0415 — optional extra
+            # Needs xtr-logging, which the logging bundle being active proves installed.
+            from xtr_http_kernel.event_listener.log_unit_listener import (  # noqa: PLC0415 — xtr-logging is optional
                 LogUnitListener,
             )
 
@@ -186,7 +186,8 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
                 LISTENER_TAG, event=ExceptionEvent, method="on_exception"
             )
         if bundle_active(builder, "rate_limiter"):
-            # Reads what the rate-limit dependency leaves on a request; the extra is installed.
+            # Reads what the rate-limit dependency leaves on a request; xtr-rate-limiter is
+            # installed, since its bundle is active.
             from xtr_http_kernel.event_listener.rate_limit_headers_listener import (  # noqa: PLC0415
                 RateLimitHeadersListener,
             )

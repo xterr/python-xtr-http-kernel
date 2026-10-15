@@ -38,16 +38,17 @@ Listeners are services, so they come from the container with everything else the
 ## Install
 
 ```sh
-uv add xtr-http-kernel                      # the lifecycle, its bundle and setup
-uv add "xtr-http-kernel[logging]"           # + the listeners that log
-uv add "xtr-http-kernel[console]"           # + the commands that report on the router
-uv add "xtr-http-kernel[rate-limiter]"      # + rate limits on routes, routers and the app
+uv add xtr-http-kernel     # the lifecycle, its bundle and setup
+uv add xtr-logging         # beside it: the listeners that log
+uv add xtr-console         # beside it: the commands that report on the router
+uv add xtr-rate-limiter    # beside it: rate limits on routes, routers and the app
 ```
 
 Requires Python 3.11+. The web framework and the container layer come with the package
-itself — this *is* the integration — so neither is an extra, and neither is the
-[HTTP message contract](../xtr-http-message-contracts) or
-[its implementation](../xtr-http-message): the bridge below is made of them.
+itself — this *is* the integration — and so do the
+[HTTP message contract](../xtr-http-message-contracts) and
+[its implementation](../xtr-http-message): the bridge below is made of them. The three
+packages beside it are optional: each is used when it is installed and left alone when not.
 
 ## Quick start
 
@@ -338,9 +339,10 @@ id. The request id settles right after the unit opens, for the same reason.
 
 ## Rate limits
 
-With the `rate-limiter` extra, a route, a router or the whole application can be held to a
-limiter configured in [xtr-rate-limiter](../xtr-rate-limiter)'s bundle. `RateLimited` is one
-declaration, written as a decorator or wherever the framework takes a dependency:
+With [xtr-rate-limiter](../xtr-rate-limiter) installed beside this package, a route, a router or
+the whole application can be held to a limiter configured in that package's bundle.
+`RateLimited` is one declaration, written as a decorator or wherever the framework takes a
+dependency:
 
 ```python
 from fastapi import APIRouter, FastAPI, Request
@@ -417,11 +419,12 @@ Everything adding this package to an application on
 [xtr-dependency-injection](../xtr-dependency-injection) takes — and, read backwards, what
 removing it undoes.
 
-- **Install** — `uv add "xtr-http-kernel[logging,console]"`; `logging` brings the listeners
-  that write to a log, `console` the commands that report on the router, `rate-limiter` the
-  [rate limits](#rate-limits). None is needed to serve requests. The
+- **Install** — `uv add xtr-http-kernel`; install [xtr-logging](../xtr-logging) beside it for
+  the listeners that write to a log, [xtr-console](../xtr-console) for the commands that report
+  on the router, [xtr-rate-limiter](../xtr-rate-limiter) for the [rate limits](#rate-limits).
+  None is needed to serve requests. The
   [HTTP message contract](../xtr-http-message-contracts) and
-  [its implementation](../xtr-http-message) come with the package, not behind an extra: the
+  [its implementation](../xtr-http-message) come with the package: the
   [messages](#the-request-and-the-response-as-messages) are part of what it does. So does the
   parser a submitted form with files in it is read with: building the request as a message
   asks the web framework for the form behind every multipart body, and the framework refuses
@@ -433,10 +436,11 @@ removing it undoes.
   from `xtr_http_kernel.bundle`. Then call `setup(app, kernel)` where the application is built.
 - **Brings along** — the [event dispatcher](../xtr-event-dispatcher) bundle always, because the
   lifecycle dispatches through it; the [logging](../xtr-logging), [console](../xtr-console) and
-  [rate limiter](../xtr-rate-limiter) bundles whenever those packages are *installed* — they are required peers, pulled in and made
-  active without being listed, and left out silently when the package is not installed. Listing
-  is not what activates them; installing the extra is. No bundle comes along for the messages:
-  neither message package ships one, and this bundle registers their services itself.
+  [rate limiter](../xtr-rate-limiter) bundles whenever those packages are *installed* — they are
+  required peers, pulled in and made active without being listed, and left out silently when the
+  package is not installed. Listing is not what activates them; installing the package is. No
+  bundle comes along for the messages: neither message package ships one, and this bundle
+  registers their services itself.
 - **Configure** — nothing is required: the zero-config path gives every request a fresh `uuid4`
   id under `X-Request-Id` — an inbound one is not trusted — no robots header, and the `request`
   log channel, and makes the request and the response of a request askable as
@@ -448,8 +452,8 @@ removing it undoes.
 - **Remove** — drop the `setup(app, kernel)` call, drop the `BUNDLES` entry, delete
   `<app>/config/http_kernel.py` if you wrote one, then `uv remove xtr-http-kernel`.
 - **Check** — `debug:bundles` shows `http_kernel` as `listed` and `active`, `event_dispatcher`
-  as `required`, and (with the extras) `logging` and `console` as `required`; `debug:router`
-  lists the application's routes.
+  as `required`, and (when those packages are installed) `logging` and `console` as `required`;
+  `debug:router` lists the application's routes.
 
 ## Configure
 
@@ -725,7 +729,7 @@ xtr_http_kernel/
 ├── request_lifecycle_middleware.py the middleware that dispatches the events
 ├── middleware_stack.py             the ordered chain a bundle contributes to
 ├── middleware_tag.py               MIDDLEWARE_TAG, the tag bundles agree on
-├── rate_limiter/                   RateLimited, with the rate-limiter extra
+├── rate_limiter/                   RateLimited, when xtr-rate-limiter is installed
 ├── routing/                        Route, RouteCollection, Router, the loaders and configurators
 ├── command/                        debug:router and router:match
 ├── exception/                      HttpKernelError, the root of everything this library raises
@@ -739,7 +743,7 @@ Developed in the [python-xtr](https://github.com/xterr/python-xtr) monorepo, und
 repository is a read-only copy, so send issues and pull requests to the monorepo.
 
 ```sh
-uv sync --all-extras
+uv sync
 uv run ruff check
 uv run ruff format --check
 uv run basedpyright

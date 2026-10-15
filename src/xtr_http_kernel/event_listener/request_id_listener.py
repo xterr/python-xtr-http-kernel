@@ -18,13 +18,13 @@ __all__ = ["RequestIdListener"]
 _VALID_REQUEST_ID: Final = re.compile(r"[A-Za-z0-9._-]{1,200}")
 """What an incoming id may look like before it is worth keeping."""
 
-# Binding the id to the ambient log context is a courtesy to the logging
-# package, which is an optional extra: without it there is nothing to bind to
-# and the listener still does its job.
+# Binding the id to the ambient log context is a courtesy to xtr-logging,
+# which is optional: without it installed there is nothing to bind to and the
+# listener still does its job.
 _bind_context: Callable[[Context], None] | None
 try:
     from xtr_logging import bind_context as _bind_context
-except ImportError:  # pragma: no cover — exercised only without the logging extra.
+except ImportError:  # pragma: no cover — exercised only without xtr-logging installed.
     _bind_context = None
 
 

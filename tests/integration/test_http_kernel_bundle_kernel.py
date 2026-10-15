@@ -71,7 +71,7 @@ async def test_without_logging_no_log_listener_exists_and_requests_work(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # A ``None`` module entry makes the import fail, so the optional peer is
-    # skipped exactly as if the logging extra were not installed.
+    # skipped exactly as if xtr-logging were not installed.
     modules = cast("dict[str, object]", sys.modules)
     monkeypatch.setitem(modules, "xtr_logging.bundle", None)
 

@@ -56,7 +56,7 @@ async def test_without_a_console_the_commands_stay_out_of_the_container(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # A ``None`` module entry makes the import fail, so the optional peer is
-    # skipped exactly as if the console extra were not installed.
+    # skipped exactly as if xtr-console were not installed.
     modules = cast("dict[str, object]", sys.modules)
     monkeypatch.setitem(modules, "xtr_console.bundle", None)
 

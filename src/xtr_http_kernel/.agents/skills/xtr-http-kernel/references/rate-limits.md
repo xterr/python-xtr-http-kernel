@@ -1,7 +1,7 @@
 # Rate limits
 
-Needs the `rate-limiter` extra (`uv add "xtr-http-kernel[rate-limiter]"`) and limiters
-configured in [xtr-rate-limiter](https://github.com/xterr/python-xtr-rate-limiter)'s bundle.
+Needs [xtr-rate-limiter](https://github.com/xterr/python-xtr-rate-limiter) installed beside this
+package (`uv add xtr-rate-limiter`) and limiters configured in its bundle.
 `RateLimited` names one of those limiters; everything else is where you put the declaration.
 
 ```python

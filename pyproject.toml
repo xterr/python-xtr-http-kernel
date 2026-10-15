@@ -26,7 +26,7 @@ dependencies = [
     "fastapi>=0.121.3",
     # Imported directly — requests, responses, middleware — not only through fastapi.
     "starlette>=0.40",
-    "xtr-dependency-injection[fastapi]>=4.0,<5",
+    "xtr-dependency-injection>=4.0,<5",
     "xtr-event-dispatcher>=4.0,<5",
     "xtr-event-dispatcher-contracts>=4.0,<5",
     # The bridge builds messages and is the one place a message meets a route,
@@ -42,18 +42,6 @@ dependencies = [
     # when the parser it reads one with is missing. So a route that takes the
     # request as a message needs it on any install, not only in this checkout.
     "python-multipart>=0.0.18",
-]
-
-[project.optional-dependencies]
-logging = [
-    "xtr-logging>=4.0,<5",
-]
-console = [
-    "xtr-console>=4.0,<5",
-]
-rate-limiter = [
-    "xtr-clock>=4.0,<5",
-    "xtr-rate-limiter[di]>=4.0,<5",
 ]
 
 # Advertises the bundle so debug:bundles can name it when installed but not listed.
@@ -76,7 +64,7 @@ dev = [
     "xtr-logging>=4.0,<5",
     "xtr-console>=4.0,<5",
     "xtr-clock>=4.0,<5",
-    "xtr-rate-limiter[di]>=4.0,<5",
+    "xtr-rate-limiter>=4.0,<5",
     # Requests are driven straight at the application through an ASGI
     # transport, so the suite never binds a socket.
     "httpx>=0.27",

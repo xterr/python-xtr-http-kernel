@@ -253,8 +253,8 @@ gone caller or a shutdown reached the lifecycle, not that anything is broken.
 
 ## Rate limits
 
-With the `rate-limiter` extra, `RateLimited` holds a route, a router or the whole application to
-a limiter configured in xtr-rate-limiter's bundle:
+With xtr-rate-limiter installed beside this package, `RateLimited` holds a route, a router or the
+whole application to a limiter configured in xtr-rate-limiter's bundle:
 
 ```python
 from xtr_http_kernel.rate_limiter import RateLimited
@@ -324,15 +324,15 @@ tests serving one application must not run at the same time.
 `HttpKernelBundle`. That is the steps below a recipe can do; the `setup(app, kernel)` step it
 prints for you to make.
 
-1. **Install** `uv add "xtr-http-kernel[logging,console]"`. The extras: `logging` adds the
-   listeners that write to a log, `console` the router commands, `rate-limiter` the rate limits.
-   None is needed to serve requests. The two message packages come with it, not behind an extra,
-   and so does the parser a submitted form with files in it is read with: building the request as
-   a message asks the framework for the form behind every multipart body.
+1. **Install** `uv add xtr-http-kernel`. Installed beside it, xtr-logging adds the listeners that
+   write to a log, xtr-console the router commands, xtr-rate-limiter the rate limits. None is
+   needed to serve requests. The two message packages come with it, and so does the parser a
+   submitted form with files in it is read with: building the request as a message asks the
+   framework for the form behind every multipart body.
 2. **Activate** `HttpKernelBundle: {"all": True}` in `BUNDLES` in `<app>/bundles.py`, imported
    from `xtr_http_kernel.bundle`, then call `setup(app, kernel)` where the application is built.
 3. **Brings along** the event dispatcher bundle always; the logging, console and rate limiter
-   bundles whenever those packages are installed. Installing the extra is what activates them,
+   bundles whenever those packages are installed. Installing the package is what activates them,
    not listing.
 4. **Configure** nothing by default: a fresh `uuid4` id under
    `X-Request-Id` per request (an inbound one is not trusted), no robots header, the `request`
