@@ -7,7 +7,9 @@ request line, the headers, the body and the form. This is what joins the two:
 
 - :class:`HttpMessageFactory` builds a request message out of the request the
   framework is serving — the body it cached, the form it parsed — and a
-  response message out of a response it would send.
+  response message out of a response it would send. Its ``serve`` builds the
+  same request without reading it: a served request, whose body is one lazy
+  stream, and which is what the lifecycle events carry.
 - :class:`StarletteHttpFactory` goes the other way, for a message made
   somewhere else: it becomes a request the framework can route, or a
   response it can send.
@@ -25,6 +27,7 @@ from .http_message_factory import HttpMessageFactory
 from .http_message_factory_interface import HttpMessageFactoryInterface
 from .response import Response
 from .response_factory import ResponseFactory
+from .served_request import ServedRequest
 from .starlette_http_factory import StarletteHttpFactory
 from .starlette_http_factory_interface import StarletteHttpFactoryInterface
 
@@ -33,6 +36,7 @@ __all__ = [
     "HttpMessageFactoryInterface",
     "Response",
     "ResponseFactory",
+    "ServedRequest",
     "StarletteHttpFactory",
     "StarletteHttpFactoryInterface",
 ]

@@ -16,6 +16,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from starlette.responses import PlainTextResponse, StreamingResponse
 from xtr_event_dispatcher import EventDispatcher
+from xtr_http_message import HttpFactory
 
 from xtr_http_kernel import (
     ExceptionEvent,
@@ -25,6 +26,7 @@ from xtr_http_kernel import (
     ResponseEvent,
     TerminateEvent,
 )
+from xtr_http_kernel.bridge import HttpMessageFactory, ResponseFactory
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -62,6 +64,13 @@ def _journalling_dispatcher(journal: list[str]) -> EventDispatcher:
     return dispatcher
 
 
+def _messages() -> HttpMessageFactory:
+    # Hand-built, as the middleware is: the library works without a
+    # container, so its tests build the bridge's factories by hand too.
+    one = HttpFactory()
+    return HttpMessageFactory(one, one, one, ResponseFactory(), one)
+
+
 def _application(dispatcher: EventDispatcher) -> FastAPI:
     app = FastAPI()
 
@@ -94,7 +103,7 @@ def _application(dispatcher: EventDispatcher) -> FastAPI:
     def unit_seen_sync() -> PlainTextResponse:
         return PlainTextResponse(_UNIT.get())
 
-    app.add_middleware(RequestLifecycleMiddleware, dispatcher=dispatcher)
+    app.add_middleware(RequestLifecycleMiddleware, dispatcher=dispatcher, messages=_messages())
     return app
 
 
@@ -222,7 +231,7 @@ async def test_a_value_set_at_the_request_event_is_seen_all_the_way_down(path: s
         # Listeners run inline in the caller's task, so what this one sets is
         # the context the endpoint — async, or sync in a copied context on a
         # worker thread — and the terminate listener run in.
-        _ = _UNIT.set(f"unit-of{event.request.url.path}")
+        _ = _UNIT.set(f"unit-of{event.request.get_uri().get_path()}")
 
     async def close_unit(_event: TerminateEvent) -> None:
         journal.append(f"terminate saw {_UNIT.get()}")

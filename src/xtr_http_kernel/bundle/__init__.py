@@ -4,6 +4,6 @@ from __future__ import annotations
 
 from .http_kernel_bundle import HttpKernelBundle
 from .http_kernel_config import HttpKernelConfig
-from .routing_resolver_pass import ROUTE_TABLE_PARAMETER, RoutingResolverPass
+from .route_registry_pass import ROUTE_REGISTRY_PARAMETER, RouteRegistryPass
 
-__all__ = ["ROUTE_TABLE_PARAMETER", "HttpKernelBundle", "HttpKernelConfig", "RoutingResolverPass"]
+__all__ = ["ROUTE_REGISTRY_PARAMETER", "HttpKernelBundle", "HttpKernelConfig", "RouteRegistryPass"]

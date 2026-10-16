@@ -1,36 +1,22 @@
-"""The route table: named routes bundles contribute and applications arrange.
+"""The routing layer: what packages contribute, and what the application registers.
 
-Routes are only arranged here — added, renamed, prefixed, left out, aliased.
-Matching a request and building a URL stay with the web framework, which every
-route reaches under its name.
+Routing is never imported automatically. A package declares route resources —
+:func:`~xtr_http_kernel.routing.decorator.as_route_resource` functions filling
+an ``APIRouter`` with native framework routes — and the application's routes
+files include them, with the framework's own ``include_router``, while
+``setup`` mounts the application. This package holds what the scan carries
+between the two — the registry — and the errors the mount refuses with.
 """
 
 from __future__ import annotations
 
-from .alias import Alias
-from .alias_deprecation import AliasDeprecation
-from .exception import (
-    InvalidArgumentError,
-    RouteCircularReferenceError,
-    RouteConflictError,
-    RoutingError,
-)
-from .route import Route
-from .route_collection import RouteCollection
-from .route_loader_interface import RouteLoaderInterface
-from .router import Router
-from .router_interface import RouterInterface
+from .exception import InvalidArgumentError, RouteConflictError, RoutingError
+from .route_registry import ROUTE_REGISTRY_PARAMETER, RouteRegistry
 
 __all__ = [
-    "Alias",
-    "AliasDeprecation",
+    "ROUTE_REGISTRY_PARAMETER",
     "InvalidArgumentError",
-    "Route",
-    "RouteCircularReferenceError",
-    "RouteCollection",
     "RouteConflictError",
-    "RouteLoaderInterface",
-    "Router",
-    "RouterInterface",
+    "RouteRegistry",
     "RoutingError",
 ]

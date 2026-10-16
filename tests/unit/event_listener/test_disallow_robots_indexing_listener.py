@@ -10,24 +10,32 @@ from xtr_http_kernel.event import ResponseEvent
 from xtr_http_kernel.event_listener import DisallowRobotsIndexingListener
 
 if TYPE_CHECKING:
-    from starlette.requests import Request
+    from collections.abc import MutableMapping
+
+    from xtr_http_message_contracts import ServerRequestInterface
 
 
-def test_enabled_marks_the_response_noindex(http_request: Request) -> None:
+def test_enabled_marks_the_response_noindex(
+    server_request: ServerRequestInterface,
+    state: MutableMapping[str, object],
+) -> None:
     headers = MutableHeaders()
 
     DisallowRobotsIndexingListener(enabled=True).on_response(
-        ResponseEvent(http_request, 200, headers)
+        ResponseEvent(server_request, state, 200, headers)
     )
 
     assert headers["X-Robots-Tag"] == "noindex"
 
 
-def test_disabled_leaves_the_response_alone(http_request: Request) -> None:
+def test_disabled_leaves_the_response_alone(
+    server_request: ServerRequestInterface,
+    state: MutableMapping[str, object],
+) -> None:
     headers = MutableHeaders()
 
     DisallowRobotsIndexingListener(enabled=False).on_response(
-        ResponseEvent(http_request, 200, headers)
+        ResponseEvent(server_request, state, 200, headers)
     )
 
     assert "X-Robots-Tag" not in headers

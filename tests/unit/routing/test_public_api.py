@@ -15,14 +15,17 @@ def test_every_routing_error_is_exported_and_derives_from_the_routing_base() -> 
 
     assert exported == {
         "InvalidArgumentError",
-        "RouteCircularReferenceError",
         "RouteConflictError",
         "RoutingError",
     }
     assert issubclass(routing.InvalidArgumentError, routing.RoutingError)
-    assert issubclass(routing.RouteCircularReferenceError, routing.RoutingError)
     assert issubclass(routing.RouteConflictError, routing.RoutingError)
 
 
 def test_the_routing_base_is_one_of_the_librarys_errors() -> None:
     assert issubclass(routing.RoutingError, HttpKernelError)
+
+
+def test_the_registry_and_its_parameter_are_exported() -> None:
+    assert routing.ROUTE_REGISTRY_PARAMETER == "http_kernel.route_registry"
+    assert routing.RouteRegistry().resources == ()

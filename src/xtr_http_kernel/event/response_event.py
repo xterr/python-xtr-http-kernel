@@ -7,8 +7,10 @@ from typing import TYPE_CHECKING, final
 from xtr_event_dispatcher_contracts import Event
 
 if TYPE_CHECKING:
+    from collections.abc import MutableMapping
+
     from starlette.datastructures import MutableHeaders
-    from starlette.requests import Request
+    from xtr_http_message_contracts import ServerRequestInterface
 
 __all__ = ["ResponseEvent"]
 
@@ -33,20 +35,37 @@ class ResponseEvent(Event):
     nothing has been sent yet.
     """
 
-    def __init__(self, request: Request, status_code: int, headers: MutableHeaders) -> None:
+    def __init__(
+        self,
+        request: ServerRequestInterface,
+        state: MutableMapping[str, object],
+        status_code: int,
+        headers: MutableHeaders,
+    ) -> None:
         """Announce the response to ``request``, starting with ``status_code`` and ``headers``.
 
-        ``headers`` is the outgoing list itself, not a copy: what a listener
-        writes into it is what leaves.
+        Args:
+            request: The request being answered, as a message.
+            state: The per-request state bag — the same one the framework's
+                own request wraps — for whatever a listener kept on it.
+            status_code: The status the response will start with.
+            headers: The outgoing list itself, not a copy: what a listener
+                writes into it is what leaves.
         """
         self._request = request
+        self._state = state
         self._status_code = status_code
         self._headers = headers
 
     @property
-    def request(self) -> Request:
-        """Return the request being answered."""
+    def request(self) -> ServerRequestInterface:
+        """Return the request being answered, as a message."""
         return self._request
+
+    @property
+    def state(self) -> MutableMapping[str, object]:
+        """Return the per-request state bag, shared with the framework's own request."""
+        return self._state
 
     @property
     def status_code(self) -> int:

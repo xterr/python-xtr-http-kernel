@@ -1,4 +1,4 @@
-"""A route the table mounts collides with one the application declared itself."""
+"""A route the routes files mount collides with one the application declared itself."""
 
 from __future__ import annotations
 
@@ -8,10 +8,11 @@ __all__ = ["RouteConflictError"]
 
 
 class RouteConflictError(RoutingError):
-    """A route the table mounts collides with one the application declared itself.
+    """A route the routes files mount collides with one the application declared itself.
 
-    The application's own route is never replaced; to change a contributed route
-    on purpose, redefine it by its name in a routes file.
+    The application's own route is never replaced and always answered first;
+    to change what a resource serves on purpose, leave its route out of the
+    routes file that includes it, or replace the service behind its endpoint.
 
     Attributes:
         name: The mounted route's name.
@@ -33,5 +34,5 @@ class RouteConflictError(RoutingError):
         self.reason = reason
         super().__init__(
             f'The route "{name}" ({path}) collides with the application\'s route "{declared}": '
-            f"{reason}. Redefine it by its name in a routes file to change it on purpose."
+            f"{reason}. Leave it out of the routes files to change what is served on purpose."
         )

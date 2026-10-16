@@ -138,4 +138,8 @@ async def test_a_route_reading_the_body_itself_answers_the_same_either_way(
 
     assert marked == plain
     assert plain[0] == 200
-    assert built == [path]
+    # The route reads its body itself. A body with a parsed side — JSON, a
+    # form — the container has read by the time it hands the message on, and
+    # the route's own read shares that one; a raw body is left to the route
+    # alone, and nothing is materialised for it.
+    assert built == ([path] if media_type in (_JSON, _FORM) else [])

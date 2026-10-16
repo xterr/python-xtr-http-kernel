@@ -1,6 +1,6 @@
 ---
 name: xtr-http-kernel
-description: The HTTP entry point for a FastAPI application on xtr-dependency-injection — setup(app, kernel), routes bundles contribute and applications arrange, a request lifecycle of five events, container services injected into routes, the request and the response as HTTP messages, and rate limits on routes. Use when wiring a FastAPI app to a kernel, shipping a bundle's routes with @as_route_loader, moving, prefixing or leaving out a bundle's routes in config/routes with @as_routes, writing a route that needs a container service, injecting ServerRequestInterface or ResponseInterface, adding a request id or response header to every response, logging uncaught exceptions, turning an exception into a response, opening a per-request unit of work, contributing middleware from a bundle, listing routes with debug:router, rate limiting a route, or testing a served application. For plain FastAPI matters use the fastapi skill instead.
+description: The HTTP entry point for a FastAPI application on xtr-dependency-injection — setup(app, kernel), routes bundles ship as resources and applications register, a request lifecycle of five events, container services injected into routes, the request and the response as HTTP messages, and rate limits on routes. Use when wiring a FastAPI app to a kernel, shipping a bundle's routes with @as_route_resource, registering, moving, prefixing or leaving out a bundle's routes in config/routes with @as_routes, writing a route that needs a container service, injecting ServerRequestInterface or ResponseInterface, adding a request id or response header to every response, logging uncaught exceptions, turning an exception into a response, opening a per-request unit of work, contributing middleware from a bundle, listing routes with debug:router, rate limiting a route, or testing a served application. For plain FastAPI matters use the fastapi skill instead.
 ---
 
 # xtr-http-kernel
@@ -13,10 +13,11 @@ signatures. Everything the framework already does well is left alone.
 ## Quick reference
 
 - One call: `setup(app, kernel)` from `xtr_http_kernel`, after the routes and before the first
-  request. It compiles the kernel once and adds every route bundles contribute.
-- Ship a bundle's routes with `@as_route_loader("resource")` on a class with `load_routes()`;
-  arrange them in `<app>/config/routes/*.py` with `@as_routes` functions. See
-  [Routes](#routes).
+  request. It compiles the kernel once and mounts the routes the application's routes files
+  register — routing is never imported automatically.
+- Ship a bundle's routes with `@as_route_resource("resource")` on a function filling an
+  `APIRouter` with native routes; register and arrange them in `<app>/config/routes/*.py` with
+  `@as_routes` functions. See [Routes](#routes).
 - Pull a container service into a route with `Injected[T]`, `Annotated[T, Target("name")]` or
   `Annotated[T, Autowire(param=...)]`. Keep `Depends` for everything that is the framework's.
 - Take the request as a message with `Injected[ServerRequestInterface]`, the response with
@@ -26,8 +27,8 @@ signatures. Everything the framework already does well is left alone.
 - Join the lifecycle with `@as_event_listener()` from `xtr_event_dispatcher` on a function
   taking one of `RequestEvent`, `ResponseEvent`, `ExceptionEvent`, `FinishRequestEvent`,
   `TerminateEvent`.
-- Every response carries a freshly minted `X-Request-Id`; `request.state.request_id` holds the
-  same value. An inbound id is ignored unless `trust_request_id=True`.
+- Every response carries a freshly minted `X-Request-Id`; the request's state bag holds the same
+  value. An inbound id is ignored unless `trust_request_id=True`.
 - Test with `httpx.ASGITransport` inside `app.router.lifespan_context(app)`, never
   `TestClient`. Swap services with `override_services` from `xtr_http_kernel.testing`.
 - Activate `HttpKernelBundle` from `xtr_http_kernel.bundle`; configure with `HttpKernelConfig`.
@@ -50,9 +51,9 @@ kernel = Kernel("app", bundles={HttpKernelBundle: {"all": True}})
 setup(app, kernel)
 ```
 
-`setup` compiles the kernel once — no service is built, no I/O — and adds its route table to the
-application, so `app.routes` holds every route from then on. Configuration and the environment
-are read at that moment. Then it wraps two seams:
+`setup` compiles the kernel once — no service is built, no I/O — and mounts the routes the
+application's routes files register, so `app.routes` holds them from then on. Configuration and
+the environment are read at that moment. Then it wraps two seams:
 
 - **The lifespan.** The first life boots the kernel `setup` compiled; later lives build it
   afresh. Each applies test overrides, boots, attaches the container so the route markers
@@ -64,43 +65,42 @@ Serve it with any ASGI server: `uvicorn app.web:app`.
 
 ## Routes
 
-A bundle ships a route loader; it is built with no arguments while the kernel compiles, so what it
-contributes is fixed by its code:
+Routes are native framework routes. A package ships *route resources*; the application
+registers them in its routes files. **Routing is never imported automatically** — a resource
+no routes file includes is not served:
 
 ```python
-from xtr_http_kernel.routing import Route, RouteCollection
-from xtr_http_kernel.routing.decorator import as_route_loader
+from fastapi import APIRouter
+from xtr_http_kernel.routing.decorator import as_route_resource
 
 
-async def list_books() -> list[str]:
-    return ["Dune"]
+@as_route_resource("books")
+def books_routes(router: APIRouter) -> None:
+    """Fill the router with the books endpoints."""
 
-
-@as_route_loader("books")
-class BooksRouteLoader:
-    def load_routes(self) -> RouteCollection:
-        routes = RouteCollection()
-        routes.add("books_list", Route("/books", list_books, methods=("GET",)))
-        return routes
+    @router.get("/books", name="books_list")
+    async def list_books() -> list[str]:
+        return ["Dune"]
 ```
 
-The application arranges contributed routes in `<app>/config/routes/` (a package — xtr-recipes
-creates its `__init__.py` with the first routes file a recipe writes there):
+The application registers and arranges resources in `<app>/config/routes/` (a package —
+xtr-recipes creates its `__init__.py` with the first routes file a recipe writes there):
 
 ```python
 from xtr_http_kernel.routing.decorator import as_routes
-from xtr_http_kernel.routing.loader.configurator import RoutingConfigurator
 
 
 @as_routes
-def shop(routes: RoutingConfigurator) -> None:
-    routes.import_("books").prefix("/shop").name_prefix("shop_")
-    routes.add("shop_books_list", "/shop/catalogue")  # move one route by its name
+def shop(app: FastAPI, resources: Mapping[str, APIRouter]) -> None:
+    books = resources["books"]
+    for route in books.routes:
+        route.name = f"shop_{route.name}"  # renaming is a loop; there is no name-prefixed include
+    app.include_router(books, prefix="/shop")  # serve; a prefix moves; not including skips
 ```
 
-A resource no routes file imports or skips is served at its own paths. A mistake fails `setup`
-with `InvalidArgumentError`; a contributed route sharing a name or a method and path with one the
-application declared fails it with `RouteConflictError`. Every configurator call and rule:
+A mistake fails `setup` with `InvalidArgumentError`; a contributed route sharing a name or a
+method and path shape with one the application declared fails it with `RouteConflictError`.
+The arrangement table, the refusals and every rule:
 [references/routing.md](references/routing.md).
 
 ## Inject services into a route
@@ -144,8 +144,19 @@ async def issue(
     return response.with_status(201).with_header("content-type", "application/json")
 ```
 
-- Built only when asked, from the framework's own request: the body it read and the form it
-  parsed, never a second reading of the wire. A route that does not ask pays nothing.
+- **The served request, read through the connection.** The request the events carry and a route
+  injects is one `ServedRequest` per request: its head is read off the connection, its body is a
+  lazy stream, and nothing crosses the wire until a listener or an endpoint reads that stream.
+  The first read materialises the whole body once, parsing it per its content type; every later
+  read is served out of the buffer, seekable and rewindable.
+- **A listener that reads the body drains the wire** — the application is handed a `receive` that
+  replays the buffered bytes, so its routes read the body the caller sent. A request no listener
+  reads passes its original channel through untouched: nothing is buffered unless something
+  asks to read it.
+- **The parsed body answers by the time an endpoint asks** — a body with a parsed side (a form,
+  JSON) is materialised before the container hands the message to a service or an endpoint, so
+  `get_parsed_body()` and `get_uploaded_files()` answer what the contract promises. The events
+  carry the message unread: a listener asking for fields reads the body stream first.
 - Both are `lifetime="scoped"`: one request message and one response per request.
   `RequestInterface` and `MessageInterface` lead to the same request.
 - `Response` and `ResponseInterface` lead to the same response: a route asks for the class at
@@ -218,7 +229,9 @@ def count_the_status(event: TerminateEvent) -> None:
     metrics.increment(event.status_code)  # the caller already has their answer
 ```
 
-Every event carries `request`. The kernel scans the application package, so a listener in a
+Every event carries `request` — the served request, as a message — and `state`, the per-request
+state bag the framework's own `request.state` wraps: what a listener puts there, the framework
+and every other listener read. The kernel scans the application package, so a listener in a
 scanned module needs no further registration.
 
 | Event | When | A listener may |
@@ -382,17 +395,17 @@ All derive from `HttpKernelError`, and import from `xtr_http_kernel` or
 A route marker resolving with no kernel attached, or outside a request scope, raises
 `FastapiIntegrationError` from xtr-dependency-injection.
 
-The route table's errors import from `xtr_http_kernel.routing`, under `RoutingError` (an
+The routing errors import from `xtr_http_kernel.routing`, under `RoutingError` (an
 `HttpKernelError`): `InvalidArgumentError` (also the library's own, so a `ValueError`),
-`RouteConflictError`, `RouteCircularReferenceError` — see
-[references/routing.md](references/routing.md).
+`RouteConflictError` — see [references/routing.md](references/routing.md).
 
 ## Do not
 
 - Do not `app.include_router(...)` a bundle's routes by hand: `setup` adds them, and including
   them again collides with them.
-- Do not give a route loader constructor parameters: it is built with none, before any service
-  exists.
+- Do not give a route resource function parameters but the router, and do not reach for a
+  service in it: `setup` calls it with a fresh router and nothing else. Services belong in the
+  endpoints' `Injected[...]` parameters.
 - Do not use `Depends` to reach a container service. Use `Injected[T]` or `Target("name")`, so
   the service stays out of the OpenAPI schema.
 - Do not call `attach`, `detach`, `request_scope`, `provider` or `current_connection` from
@@ -406,6 +419,9 @@ The route table's errors import from `xtr_http_kernel.routing`, under `RoutingEr
 - Do not use `TestClient`, and do not drive the app without entering its lifespan: no kernel is
   attached, so every marker fails.
 - Do not expect a body on `ResponseEvent`. Answer at `RequestEvent` or `ExceptionEvent` instead.
+- Do not expect `get_parsed_body()` or `get_uploaded_files()` to answer on the message an event
+  carries before its body stream has been read: the container materialises the parsed side of an
+  injected message, and a listener reads the stream first.
 - Do not expect a service to be reset between requests. Concurrent requests share whatever is
   built for the application's life, so nothing is cleared per request; a service that must not
   outlive one request is registered `lifetime="scoped"`.
@@ -419,5 +435,7 @@ The route table's errors import from `xtr_http_kernel.routing`, under `RoutingEr
   or any other concrete message class in a route, a listener or a per-request service. Take the
   registered factory interface instead; those classes belong to code that is not serving a
   request.
-- Do not look for a controller, controller-arguments or view event. Routing, argument resolution
-  and serialization are the framework's, deliberately.
+- Do not look for a controller-arguments or view event. Argument resolution and serialization are
+  the framework's, deliberately.
+- Do not expect a contributed route to be served because its bundle is active: a routes file
+  including its resource is what registers it. `debug:router` lists what is mounted.

@@ -1,4 +1,4 @@
-"""An application arranging the books routes and adding one of its own."""
+"""A routes file arranging a resource: renamed, moved, and one route of the app's own."""
 
 from __future__ import annotations
 
@@ -7,14 +7,21 @@ from typing import TYPE_CHECKING
 from xtr_http_kernel.routing.decorator import as_routes
 
 if TYPE_CHECKING:
-    from xtr_http_kernel.routing.loader.configurator import RoutingConfigurator
+    from collections.abc import Mapping
 
-
-async def home() -> dict[str, str]:
-    return {"home": "page"}
+    from fastapi import APIRouter, FastAPI
 
 
 @as_routes
-def shop(routes: RoutingConfigurator) -> None:
-    _ = routes.import_("books").prefix("/shop").name_prefix("shop_").exclude("books_show")
-    _ = routes.add("home", "/").endpoint(home).methods("GET")
+def arranged(app: FastAPI, resources: Mapping[str, APIRouter]) -> None:
+    """Move the books under /shop under renamed names, and answer / as home."""
+    books = resources["books"]
+    for route in books.routes:
+        # The framework's base route type does not declare the name every kind carries.
+        route.name = f"shop_{route.name}"  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]  # ty: ignore[unresolved-attribute]
+    app.include_router(books, prefix="/shop")
+    app.include_router(resources["well_known"])
+
+    @app.get("/", name="home")
+    async def home() -> dict[str, str]:
+        return {"home": "page"}

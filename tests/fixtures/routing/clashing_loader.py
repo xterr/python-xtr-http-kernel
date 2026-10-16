@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-from tests.fixtures.routing.loaders import list_books
-from xtr_http_kernel.routing import Route, RouteCollection
-from xtr_http_kernel.routing.decorator import as_route_loader
+from typing import TYPE_CHECKING
+
+from xtr_http_kernel.routing.decorator import as_route_resource
+
+if TYPE_CHECKING:
+    from fastapi import APIRouter
 
 
-@as_route_loader("library")
-class LibraryRouteLoader:
-    def load_routes(self) -> RouteCollection:
-        routes = RouteCollection()
-        routes.add("books_list", Route("/library", list_books, methods=("GET",)))
-        return routes
+@as_route_resource("library")
+def library_routes(router: APIRouter) -> None:
+    """Fill the router with a route claiming the books resource's name."""
+
+    @router.get("/library", name="books_list")
+    async def library_list() -> dict[str, str]:
+        return {"books": "all"}

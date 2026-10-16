@@ -1,30 +1,26 @@
-"""A loader whose endpoints validate a path parameter and ask the container for a service."""
+"""A resource whose endpoints validate a path parameter and ask the container for a value."""
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Annotated
+
 # Read at runtime: the framework reads the endpoints' annotations.
-from xtr_dependency_injection import Injected
+from xtr_dependency_injection import Autowire
 
-from xtr_http_kernel.routing import (
-    Route,
-    RouteCollection,
-    RouterInterface,
-)
-from xtr_http_kernel.routing.decorator import as_route_loader
+from xtr_http_kernel.routing.decorator import as_route_resource
+
+if TYPE_CHECKING:
+    from fastapi import APIRouter
 
 
-async def page(number: int) -> dict[str, int]:
-    return {"page": number}
+@as_route_resource("status")
+def status_routes(router: APIRouter) -> None:
+    """Fill the router with the status endpoints."""
 
+    @router.get("/pages/{number}", name="status_page")
+    async def page(number: int) -> dict[str, int]:
+        return {"page": number}
 
-async def status(router: Injected[RouterInterface]) -> dict[str, int]:
-    return {"routes": len(router.get_route_collection())}
-
-
-@as_route_loader("status")
-class StatusRouteLoader:
-    def load_routes(self) -> RouteCollection:
-        routes = RouteCollection()
-        routes.add("status_page", Route("/pages/{number}", page, methods=("GET",)))
-        routes.add("status", Route("/status", status, methods=("GET",)))
-        return routes
+    @router.get("/status", name="status")
+    async def status(env: Annotated[str, Autowire(param="kernel.environment")]) -> dict[str, str]:
+        return {"env": env}

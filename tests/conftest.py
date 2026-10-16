@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 from starlette.requests import Request
+from xtr_http_message import ServerRequest
+
+if TYPE_CHECKING:
+    from collections.abc import MutableMapping
+
+    from xtr_http_message_contracts import ServerRequestInterface
 
 
 @pytest.fixture
@@ -33,3 +41,20 @@ def http_request() -> Request:
             "server": ("bookshop.test", 80),
         }
     )
+
+
+@pytest.fixture
+def server_request() -> ServerRequestInterface:
+    # The events carry a request as a message; a plain one stands in for the
+    # served request wherever a unit test only reads what the message says.
+    return ServerRequest(
+        "GET",
+        "http://bookshop.test/books/978-0141439518?quantity=2",
+        {"Host": "bookshop.test"},
+    )
+
+
+@pytest.fixture
+def state() -> MutableMapping[str, object]:
+    # The per-request bag the events carry, empty as a request's starts.
+    return {}

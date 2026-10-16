@@ -7,8 +7,10 @@ from typing import TYPE_CHECKING, final
 from xtr_event_dispatcher_contracts import Event
 
 if TYPE_CHECKING:
-    from starlette.requests import Request
+    from collections.abc import MutableMapping
+
     from starlette.responses import Response
+    from xtr_http_message_contracts import ServerRequestInterface
 
 __all__ = ["ExceptionEvent"]
 
@@ -30,16 +32,34 @@ class ExceptionEvent(Event):
     logging what went wrong wants to see.
     """
 
-    def __init__(self, request: Request, exception: BaseException) -> None:
-        """Announce that handling ``request`` raised ``exception``."""
+    def __init__(
+        self,
+        request: ServerRequestInterface,
+        state: MutableMapping[str, object],
+        exception: BaseException,
+    ) -> None:
+        """Announce that handling ``request`` raised ``exception``.
+
+        Args:
+            request: The request whose handling raised, as a message.
+            state: The per-request state bag — the same one the framework's
+                own request wraps — for whatever a listener kept on it.
+            exception: What was raised.
+        """
         self._request = request
+        self._state = state
         self._exception = exception
         self._response: Response | None = None
 
     @property
-    def request(self) -> Request:
-        """Return the request whose handling raised."""
+    def request(self) -> ServerRequestInterface:
+        """Return the request whose handling raised, as a message."""
         return self._request
+
+    @property
+    def state(self) -> MutableMapping[str, object]:
+        """Return the per-request state bag, shared with the framework's own request."""
+        return self._state
 
     @property
     def exception(self) -> BaseException:

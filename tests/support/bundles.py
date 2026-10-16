@@ -11,11 +11,16 @@ be injected into: one built for the application's whole life.
 ``ResponseHolderBundle`` is its counterpart for the response: the bridge's own
 response class is as much one request's as the request message is, so a
 service built for the application's life may not take it either.
+
+``TickBundle`` registers the per-request service the declared-route fixtures
+inject, and nothing else: the controller taking it is registered by the
+routing pass, which is what those tests watch.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast, final
+from uuid import uuid4
 
 from typing_extensions import override
 from xtr_dependency_injection import Bundle, as_bundle
@@ -40,6 +45,9 @@ __all__ = [
     "ResponseHolderBundle",
     "ServedBundle",
     "Stamp",
+    "Tick",
+    "TickBundle",
+    "tick_factory",
 ]
 
 STAMPS_SCOPE_KEY = "xtr_test_stamps"
@@ -152,3 +160,43 @@ class ServedBundle(Bundle):
         _ = services.set(inner_stamp, qualifier="inner").add_tag(MIDDLEWARE_TAG, priority=-5)
         _ = services.set(PlainStamp).add_tag(MIDDLEWARE_TAG)
         _ = services.set(outer_stamp, qualifier="outer").add_tag(MIDDLEWARE_TAG, priority=10)
+
+
+@final
+class Tick:
+    """A service built per request, so two requests never share one."""
+
+    def __init__(self, token: str) -> None:
+        self.token = token
+
+
+@final
+class TickController:
+    """Answers off this request's tick; the routes inject it as a plain service."""
+
+    def __init__(self, tick: Tick) -> None:
+        self._tick = tick
+
+    @property
+    def token(self) -> str:
+        """Return the token of the tick this controller was built with."""
+        return self._tick.token
+
+
+def tick_factory() -> Tick:
+    """Build the tick of one request, with a token nothing else carries."""
+    return Tick(uuid4().hex)
+
+
+@as_bundle("tick")
+class TickBundle(Bundle[object]):
+    """Registers the per-request tick and the controller answering off it."""
+
+    @override
+    def load_extension(
+        self, config: object, services: ServiceConfigurator, builder: ContainerBuilder
+    ) -> None:
+        del config, builder
+        _ = services.set(tick_factory, lifetime="scoped")
+        # Transient: built per request, so the scoped tick it takes stays per request.
+        _ = services.set(TickController, lifetime="transient")

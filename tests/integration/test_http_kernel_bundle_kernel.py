@@ -17,9 +17,9 @@ from xtr_http_kernel import KernelEvents, RequestEvent, TerminateEvent, setup
 from xtr_http_kernel.bundle import HttpKernelBundle
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Generator, MutableMapping
 
-    from starlette.requests import Request
+    from xtr_http_message_contracts import ServerRequestInterface
 
 pytestmark = pytest.mark.anyio
 
@@ -41,7 +41,8 @@ def _kernel() -> Kernel:
 
 
 async def test_the_request_id_listener_is_registered_as_a_listener(
-    http_request: Request,
+    server_request: ServerRequestInterface,
+    state: MutableMapping[str, object],
 ) -> None:
     async with await _kernel().boot() as booted:
         dispatcher = await booted.container.get(EventDispatcherInterface)
@@ -50,10 +51,10 @@ async def test_the_request_id_listener_is_registered_as_a_listener(
         assert any("RequestIdListener" in repr(listener) for listener in listeners)
 
         # Dispatching the event proves the registration reaches the listener.
-        _ = await dispatcher.dispatch(RequestEvent(http_request))
-        _ = await dispatcher.dispatch(TerminateEvent(http_request, 200))
+        _ = await dispatcher.dispatch(RequestEvent(server_request, state))
+        _ = await dispatcher.dispatch(TerminateEvent(server_request, state, 200))
 
-    settled = cast("str", http_request.state.request_id)
+    settled = cast("str", state["request_id"])
     assert settled
 
 

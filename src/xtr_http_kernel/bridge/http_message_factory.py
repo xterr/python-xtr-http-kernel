@@ -26,9 +26,13 @@ from xtr_http_kernel.exception import (
 )
 
 from ._headers import grouped_headers
+from ._media_types import is_form as _is_form
+from ._media_types import is_json as _is_json
+from ._media_types import media_type_of as _media_type
 from ._scope_uri import scope_uri
 from .http_message_factory_interface import HttpMessageFactoryInterface
 from .response import Response as BridgeResponse
+from .served_request import ServedRequest
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -68,26 +72,7 @@ its own right or has no business repeating.
 
 _DEFAULT_PROTOCOL: Final = "1.1"
 
-_FORM_MEDIA_TYPES: Final = frozenset({"application/x-www-form-urlencoded", "multipart/form-data"})
-_JSON_MEDIA_TYPES: Final = frozenset({"application/json", "application/x-json"})
-_JSON_SUFFIX: Final = "+json"
-
 _CONTENT_RANGE: Final = "content-range"
-
-
-def _media_type(content_type: str) -> str:
-    """Return the media type a ``Content-Type`` header names, without its parameters."""
-    return content_type.partition(";")[0].strip().lower()
-
-
-def _is_form(media_type: str) -> bool:
-    """Tell whether a media type says the body is a submitted form."""
-    return media_type in _FORM_MEDIA_TYPES
-
-
-def _is_json(media_type: str) -> bool:
-    """Tell whether a media type says the body is JSON, suffixed types included."""
-    return media_type in _JSON_MEDIA_TYPES or media_type.endswith(_JSON_SUFFIX)
 
 
 def _server_params(scope: Scope) -> Mapping[str, object]:
@@ -155,6 +140,23 @@ class HttpMessageFactory(HttpMessageFactoryInterface):
         self._uploads = uploads
         self._responses = responses
         self._uris = uris
+
+    @override
+    def serve(self, request: Request) -> ServedRequest:
+        """Return ``request`` as a served request, reading nothing off the wire.
+
+        The head is built from the connection alone and the body is left
+        lazy — see :class:`~xtr_http_kernel.bridge.served_request.ServedRequest`
+        — so the lifecycle can hand a request message to its listeners
+        without any of them costing a request its stream.
+
+        Args:
+            request: The request the framework is serving.
+
+        Returns:
+            The same request, as a message nothing has read the body of.
+        """
+        return ServedRequest(request, self._uris, self._streams, self)
 
     @override
     async def create_request(self, request: Request) -> ServerRequestInterface:

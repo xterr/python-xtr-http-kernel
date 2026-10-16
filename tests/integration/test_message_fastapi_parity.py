@@ -225,7 +225,10 @@ async def test_the_answer_is_the_same_with_and_without_the_request_message(
     assert plain[0] == status
     assert marked == plain
     # A guard on the comparison: an accepted payload reaches the marker, so a
-    # change that stopped the message being built would make these vacuous.
+    # change that stopped the message being served would make these vacuous.
+    # An accepted payload has a parsed side — a form, JSON — so the container
+    # reads it before handing the message on: one read, through the very
+    # request object the framework's own parsing caches on.
     if status == 200:
         assert built == [path]
 

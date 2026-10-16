@@ -7,7 +7,9 @@ from typing import TYPE_CHECKING, final
 from xtr_event_dispatcher_contracts import Event
 
 if TYPE_CHECKING:
-    from starlette.requests import Request
+    from collections.abc import MutableMapping
+
+    from xtr_http_message_contracts import ServerRequestInterface
 
 __all__ = ["TerminateEvent"]
 
@@ -27,15 +29,34 @@ class TerminateEvent(Event):
     counting statuses should count it.
     """
 
-    def __init__(self, request: Request, status_code: int) -> None:
-        """Announce that ``request`` was answered with ``status_code``."""
+    def __init__(
+        self,
+        request: ServerRequestInterface,
+        state: MutableMapping[str, object],
+        status_code: int,
+    ) -> None:
+        """Announce that ``request`` was answered with ``status_code``.
+
+        Args:
+            request: The request that was answered, as a message.
+            state: The per-request state bag — the same one the framework's
+                own request wraps — for whatever a listener kept on it.
+            status_code: The status that was sent, or ``500`` when nothing
+                was.
+        """
         self._request = request
+        self._state = state
         self._status_code = status_code
 
     @property
-    def request(self) -> Request:
-        """Return the request that was answered."""
+    def request(self) -> ServerRequestInterface:
+        """Return the request that was answered, as a message."""
         return self._request
+
+    @property
+    def state(self) -> MutableMapping[str, object]:
+        """Return the per-request state bag, shared with the framework's own request."""
+        return self._state
 
     @property
     def status_code(self) -> int:

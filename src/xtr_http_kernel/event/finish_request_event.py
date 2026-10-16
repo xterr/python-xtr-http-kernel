@@ -7,7 +7,9 @@ from typing import TYPE_CHECKING, final
 from xtr_event_dispatcher_contracts import Event
 
 if TYPE_CHECKING:
-    from starlette.requests import Request
+    from collections.abc import MutableMapping
+
+    from xtr_http_message_contracts import ServerRequestInterface
 
 __all__ = ["FinishRequestEvent"]
 
@@ -30,11 +32,23 @@ class FinishRequestEvent(Event):
     was actually sent.
     """
 
-    def __init__(self, request: Request) -> None:
-        """Announce that handling ``request`` finished."""
+    def __init__(self, request: ServerRequestInterface, state: MutableMapping[str, object]) -> None:
+        """Announce that handling ``request`` finished.
+
+        Args:
+            request: The request whose handling finished, as a message.
+            state: The per-request state bag — the same one the framework's
+                own request wraps — for whatever a listener kept on it.
+        """
         self._request = request
+        self._state = state
 
     @property
-    def request(self) -> Request:
-        """Return the request whose handling finished."""
+    def request(self) -> ServerRequestInterface:
+        """Return the request whose handling finished, as a message."""
         return self._request
+
+    @property
+    def state(self) -> MutableMapping[str, object]:
+        """Return the per-request state bag, shared with the framework's own request."""
+        return self._state

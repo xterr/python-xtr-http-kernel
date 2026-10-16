@@ -186,6 +186,8 @@ async def test_a_submitted_file_is_readable_while_the_request_is_being_served(
     building = server_request(_message_factory())
     message = await anext(building)
 
+    # The files answer once the body has been read: the parse rides the read.
+    assert await message.get_body().get_contents() == _form_body()
     one = cast("UploadedFileInterface", message.get_uploaded_files()["f1"])
     read = await one.get_stream().get_contents()
     await _finished(building)
@@ -199,6 +201,9 @@ async def test_a_form_the_factory_parsed_is_closed_when_the_scope_ends(
     del submitted
     building = server_request(_message_factory())
     message = await anext(building)
+    # A form is parsed when the body is read, so read it: the scope's close is
+    # what is under test here, not the timing of the parse.
+    assert await message.get_body().get_contents() == _form_body()
 
     await _finished(building)
 
@@ -209,6 +214,7 @@ async def test_a_form_the_factory_parsed_is_closed_when_the_scope_ends(
 async def test_closing_a_form_a_second_time_costs_nothing(submitted: Request) -> None:
     building = server_request(_message_factory())
     message = await anext(building)
+    assert await message.get_body().get_contents() == _form_body()
 
     await _finished(building)
     # What the framework does with a form it parsed itself.

@@ -22,6 +22,9 @@ setup(
         "tests.fixtures.routing",
         env="test",
         bundles={HttpKernelBundle: {"all": True}},
-        resources=("tests.fixtures.routing.loaders",),
+        resources=(
+            "tests.fixtures.routing.loaders",
+            "tests.fixtures.routing.included_routes",
+        ),
     ),
 )

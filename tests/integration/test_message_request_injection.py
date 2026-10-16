@@ -67,7 +67,10 @@ async def test_a_service_and_the_route_hold_the_same_request_built_once() -> Non
         response = await client.get("/audited")
 
     assert response.json() == {"same": True, "path": "/audited"}
-    assert BUILT == ["/audited"]
+    # The service and the route hold the one served request — the instance
+    # the events carried — and neither of them reads a body, so nothing is
+    # materialised.
+    assert BUILT == []
     assert len(BUILDS) == 1
 
 
@@ -76,7 +79,7 @@ async def test_a_service_alone_is_enough_to_have_the_request_built() -> None:
         response = await client.get("/service-only")
 
     assert response.json() == {"path": "/service-only"}
-    assert BUILT == ["/service-only"]
+    assert BUILT == []
 
 
 async def test_a_sync_endpoint_is_handed_the_request() -> None:
@@ -84,7 +87,7 @@ async def test_a_sync_endpoint_is_handed_the_request() -> None:
         response = await client.get("/sync")
 
     assert response.json() == {"path": "/sync"}
-    assert BUILT == ["/sync"]
+    assert BUILT == []
 
 
 async def test_a_sync_dependency_of_a_route_is_handed_the_request() -> None:
@@ -92,7 +95,7 @@ async def test_a_sync_dependency_of_a_route_is_handed_the_request() -> None:
         response = await client.get("/sync-dependency")
 
     assert response.json() == {"path": "/sync-dependency"}
-    assert BUILT == ["/sync-dependency"]
+    assert BUILT == []
 
 
 async def test_two_requests_each_get_their_own_message_and_audit() -> None:
@@ -101,5 +104,5 @@ async def test_two_requests_each_get_their_own_message_and_audit() -> None:
         second = await client.get("/service-only")
 
     assert (first.status_code, second.status_code) == (200, 200)
-    assert BUILT == ["/audited", "/service-only"]
+    assert BUILT == []
     assert len(set(BUILDS)) == 2

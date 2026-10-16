@@ -133,7 +133,10 @@ surfaces then, rather than a request running without its lifecycle.
 ## The lifecycle
 
 Every request goes through the same events, and a listener joins wherever it has something to
-contribute. Each is dispatched at most once, however the request went:
+contribute. Each is dispatched at most once, however the request went, and each carries the
+request as a message — the served request below — plus `state`, the per-request state bag the
+framework's own `request.state` wraps: what a listener puts there, the framework and every other
+listener read:
 
 | Event | `KernelEvents` | When | What a listener may do |
 |---|---|---|---|
@@ -214,12 +217,33 @@ async def issue(
     return response.with_status(201).with_header("content-type", "application/json")
 ```
 
-- **Built only when asked.** The request is built the first time something asks for it, from
-  FastAPI's own request object — the body it already read, the form it already parsed. A route
-  that does not ask pays nothing, and nothing is buffered anywhere.
-- **Once per request.** Both are `lifetime="scoped"`, so every endpoint, dependency and service
-  of one request sees the same request message and the same response. `RequestInterface` and
-  `MessageInterface` lead to the same build, so a parameter typed by any of the three gets it.
+- **The served request, read through the connection.** The request the events carry is a
+  `ServedRequest`: its head — method, URI, headers, cookies, query parameters, environment
+  parameters, protocol version — is read straight off the connection, and its body is one lazy
+  stream. Nothing is read off the wire until a listener or an endpoint reads that stream; the
+  first read materialises the whole body once, parsing it per its content type on the way, and
+  every later read is served out of the buffer, seekable and rewindable. One instance is parked
+  on the connection's scope, so the events, the scoped `server_request` service and a route's
+  injected message are all the same object.
+- **A listener that reads the body drains the wire** — so the application is handed a `receive`
+  that replays the buffered bytes, and its routes read the body the caller sent as if nobody
+  had. A request no listener reads passes its original channel through untouched: nothing is
+  buffered unless something asks to read it.
+- **The parsed body answers by the time an endpoint asks.** A body that has a parsed side — a
+  form, JSON — is materialised before the container hands the message to a service or an
+  endpoint, so `get_parsed_body()` and `get_uploaded_files()` answer what the message contract
+  promises, unconditionally, for every consumer written against it. A body with no parsed side
+  is left unread. The events carry the message as it stands: a listener that asks for fields
+  reads the body stream first, and the reading parses — the one place the contract's wording
+  still needs that order, and a listener is the one consumer that can await.
+- **The attributes are live.** `get_attributes()` reads the matched route's path parameters as
+  they are now — routing fills them after the message exists. The `with_*` members return plain
+  copies: immutable snapshots of the message as it stands, so a change a listener makes never
+  reaches the connection.
+- **Once per request.** Both the request and the response are `lifetime="scoped"`, so every
+  endpoint, dependency and service of one request sees the same request message and the same
+  response. `RequestInterface` and `MessageInterface` lead to the same build, so a parameter
+  typed by any of the three gets it.
 - **One response, two names.** `xtr_http_kernel.bridge.Response` and `ResponseInterface` lead to
   that same build: an endpoint asks for the class and declares it returns it — parameter and
   return annotation the same type, nothing to narrow and nothing to configure — while a library
@@ -283,7 +307,7 @@ one:
 
 | Service | Does |
 |---|---|
-| `HttpMessageFactoryInterface` | `await create_request(request)` and `create_response(response)`: the framework's own, as messages |
+| `HttpMessageFactoryInterface` | `serve(request)`: the framework's own request, as a served request — a read-through view nothing has read the body of; `await create_request(request)` and `create_response(response)`: the framework's own, as messages read whole |
 | `StarletteHttpFactoryInterface` | `await create_request(message, streamed=False)` and `await create_response(message, streamed=False)`: a message, as the framework's own |
 
 A response that arrived from outside the application — one a worker built with
@@ -327,11 +351,11 @@ The bundle registers these; which ones depend on what is installed and active:
 
 | Listener | Events | Active when | Does |
 |---|---|---|---|
-| `RequestIdListener` | `RequestEvent`, `ResponseEvent` | always | mints a `uuid4().hex` — or keeps a well-formed incoming id, where `trust_request_id` says to — puts it on `request.state.request_id`, binds it to the log context when logging is around, and echoes it on the response |
+| `RequestIdListener` | `RequestEvent`, `ResponseEvent` | always | mints a `uuid4().hex` — or keeps a well-formed incoming id, where `trust_request_id` says to — puts it on the request's state bag, binds it to the log context when logging is around, and echoes it on the response |
 | `DisallowRobotsIndexingListener` | `ResponseEvent` | always | stamps `X-Robots-Tag: noindex` on every response, when the config turns it on |
 | `LogUnitListener` | `RequestEvent`, `TerminateEvent` | logging bundle active | opens a [logging unit of work](../xtr-logging#units-of-work) per request and closes it once all was sent |
 | `ErrorLoggingListener` | `ExceptionEvent` | logging bundle active | writes every uncaught exception to the request channel — `info` for a cancellation, an interrupt or an exit, `error` below a 500 status, `critical` otherwise — leaving the response to whoever answers it |
-| `RateLimitHeadersListener` | `ResponseEvent` | rate limiter bundle active | writes the `X-RateLimit-*` headers of the [rate limit](#rate-limits) that speaks for the response, and makes it private |
+| `RateLimitHeadersListener` | `ResponseEvent` | rate limiter bundle active | writes the `X-RateLimit-*` headers of the [rate limit](#rate-limits) that speaks for the response — the one a route's limit left on the request's state bag — and makes it private |
 
 The two logging listeners join only when the logging bundle is active, and open and close the
 unit of work outside everything else so every record made while handling carries the request's
@@ -539,96 +563,98 @@ offending definition.
 
 ## Routes
 
-A bundle ships its routes, and an application gets them served with no code in its entry point.
-The application arranges them in its routes files, and `setup` adds the result.
+Routes are native framework routes, end to end. A package ships them as *route resources* —
+named routers its registration functions fill — and an application registers them in its
+routes files. **Routing is never imported automatically:** a resource no routes file includes
+is not served. The file a package's recipe writes into `<app>/config/routes/` is what
+registers its endpoints; deleting the file uninstalls them.
 
-### A bundle's routes
+### What a package ships
 
-A route loader is a class with `load_routes()`, declared with `@as_route_loader`. It names the
-*resource* an application imports its routes by:
+A route resource is a plain function declared with `@as_route_resource`, filling an
+`APIRouter` with the framework's own routes:
 
 ```python
-from xtr_http_kernel.routing import Route, RouteCollection
-from xtr_http_kernel.routing.decorator import as_route_loader
+from fastapi import APIRouter
+from xtr_http_kernel.routing.decorator import as_route_resource
 
 
-async def list_books() -> list[str]:
-    return ["Dune"]
+@as_route_resource("books")
+def books_routes(router: APIRouter) -> None:
+    """Fill the router with the books endpoints."""
 
+    @router.get("/books", name="books_list")
+    async def list_books() -> list[str]:
+        return ["Dune"]
 
-@as_route_loader("books")
-class BooksRouteLoader:
-    def load_routes(self) -> RouteCollection:
-        routes = RouteCollection()
-        routes.add("books_list", Route("/books", list_books, methods=("GET",)))
-        return routes
+    @router.get("/books/{book_id}", name="books_show")
+    async def show_book(book_id: str) -> dict[str, str]:
+        return {"book": book_id}
 ```
 
-The loader is built with no arguments while the kernel compiles, before any service exists, so
-what it contributes is fixed by the code that ships it. A route a deployment turns off keeps
-answering — its endpoint refuses — and an application that wants it gone leaves it out in a
-routes file. Pass `prefixable=False` for routes a standard puts at a fixed place, such as a
-`/.well-known/` document: no routes file may move them under a prefix. A loader is found like any
-other declaration: in the application's scan, or in a module a bundle scans with
-`services.load(...)`.
+Everything the framework's own decorators take — `dependencies=`, `response_class`,
+`openapi_extra`, websockets — a resource takes: there is no layer in between. An endpoint
+needing a service declares it `Injected[...]` as anywhere else; a controller is a service
+like any other, and an application replaces one the way it replaces any service — its own
+definition of the type outranks a bundle's.
 
-A `Route` carries a path, the endpoint the framework calls — its `Injected[...]` parameters
-untouched — and the options handed to the framework as they are: `methods`,
-`include_in_schema`, `tags`, `summary`, `status_code`, `response_model`. Its name is the key it
-has in its `RouteCollection`. A mounted route validates, documents and is reached by
-`url_path_for` exactly like the same function declared on a router.
+The function is found like any other declaration — in the application's scan, or in a module
+a bundle scans with `services.load(...)` — and `setup` calls it once per resource with a
+fresh router, no services and no side effects: what a package contributes is fixed by the
+code that ships it. Several functions may fill one resource; two routes of a resource
+claiming one name are refused while staging. A route keeps the name it was declared with —
+`url_path_for`, and anything building a URL a stranger keeps, builds it by name — and a
+route a deployment turns off keeps answering: its endpoint refuses, and an application that
+wants it gone filters it out of the staged router.
 
 ### The application's routes files
 
-A routes file is a function declared `@as_routes` in `<app>/config/routes/`, receiving a
-`RoutingConfigurator`:
+A routes file is a function declared `@as_routes` in `<app>/config/routes/`, receiving the
+application and every staged resource as a native router:
 
 ```python
 from xtr_http_kernel.routing.decorator import as_routes
-from xtr_http_kernel.routing.loader.configurator import RoutingConfigurator
 
 
 @as_routes
-def shop(routes: RoutingConfigurator) -> None:
-    routes.import_("books").prefix("/shop").name_prefix("shop_")
-    routes.add("shop_books_list", "/shop/catalogue")  # move one route by its name
-    routes.add("home", "/").endpoint(home).methods("GET")
-
-
-async def home() -> dict[str, str]:
-    return {"page": "home"}
+def shop(app: FastAPI, resources: Mapping[str, APIRouter]) -> None:
+    """Serve the books under /shop, under renamed names."""
+    books = resources["books"]
+    for route in books.routes:
+        route.name = f"shop_{route.name}"
+    app.include_router(books, prefix="/shop")
 ```
 
-- `import_(resource)` brings in a resource's routes, arranged with `prefix`, `name_prefix` and
-  `exclude(*names)`; `skip(resource)` serves none of them. A resource no routes file imports or
-  skips is served at its own paths and names.
-- `add(name, path)` defines a route. Under a name already in the table it replaces that route:
-  without `.endpoint(...)` it moves the route and keeps the rest, with one it redefines it. Its
-  options — `methods`, `priority`, `tags`, `summary`, `status_code`, `include_in_schema`,
-  `response_model` — read like the `Route` fields.
-- `collection(name_prefix)` groups routes under one path prefix and name prefix;
-  `alias(name, target)` adds another name for a route, optionally `.deprecate(...)`d.
-- Nothing reaches the table while the file runs: every call is applied when it returns, in the
-  order written, so a route defined after an import replaces the imported one of that name.
-  Each file starts from the resources as their loaders returned them.
+The arrangement is native calls on a staged router — before it is included, so nothing
+mounted is ever rebuilt:
 
-A mistake is refused while the kernel compiles — so at `setup` — with an `InvalidArgumentError`
-naming it: an unknown resource or route, a prefix on fixed routes, a new route with no endpoint,
-two loaders claiming one resource. The kernel scans only packages, so `config/routes/` needs an
-`__init__.py`; xtr-recipes creates it with the first routes file a recipe writes there.
+- **Serve** — `app.include_router(resources["books"])`.
+- **Move** — `app.include_router(resources["books"], prefix="/shop")`.
+- **Skip** — do not include it; omission is the skip.
+- **Leave one route out** — `books.routes = [r for r in books.routes if r.name != "books_show"]`
+  before including.
+- **Rename the group** — the loop above sets `route.name` (and `route.operation_id`, when the
+  description matters); the framework has no name-prefixed include.
+- **Replace a route** — declare the application's own before `setup` — the application's
+  routes come first — and filter the contributed one out of its resource.
+
+The files run in scan order, and each sees the resources as staged. A resource is included by
+the first file including it; a second include of one is refused, as every name of it would
+land twice. A mistake is refused at `setup` with an `InvalidArgumentError` naming it: a file
+asking for a resource nothing installed contributes, two routes of one resource claiming one
+name. The kernel scans only packages, so `config/routes/` needs an `__init__.py`; xtr-recipes
+creates it with the first routes file a recipe writes there.
 
 ### Collisions with the application's own routes
 
-The application's own routes are never changed, and they come first. A contributed route sharing
-a name with one the application declared, or one the application's routes would answer first —
-the same method and path under any parameter names, a catch-all, a mount, or a router the
-application included — fails `setup` with a `RouteConflictError` naming both; so do two
-contributed routes answering the same method and path. To change a contributed route on purpose,
-redefine it by its name in a routes file.
-
-An alias is mounted under its own name, out of the API description, so `url_path_for` reaches it.
-The table is also a service: `RouterInterface.get_route_collection()` returns a copy of what was
-mounted, the same on every start of the application, for code that reads a route by name.
+The application's own routes — the ones declared before `setup` — are never changed, and they
+come first: a catch-all or a mount of the application's shadowing a contributed route is the
+application's own doing, and `router:match` answers who serves what. What `setup` refuses with
+a `RouteConflictError` naming both is the silent kind: a contributed route sharing a name with
+one the application declared, so `url_path_for` would guess; a contributed route answering a
+method at the path shape of one the application declared — parameters told apart by shape, not
+by name; and two contributed routes answering one method and path, the second of which no
+request could ever reach.
 
 ## Router commands
 
@@ -707,20 +733,20 @@ itself, as well as from `xtr_http_kernel.exception`.
 | `UnknownRateLimiterError` | a `RateLimited` names a limiter the application did not configure; also a `LookupError` |
 | `UnsupportedConnectionError` | something asked for the request as a message while a WebSocket was being served |
 
-The route table's errors live in `xtr_http_kernel.routing`, under `RoutingError` — itself an
+The routing layer's errors live in `xtr_http_kernel.routing`, under `RoutingError` — itself an
 `HttpKernelError`:
 
 | Error | Raised when |
 |---|---|
-| `InvalidArgumentError` | a routes file names an unknown resource or route, prefixes fixed routes, defines a route with no endpoint, or is `async`; one file skips a resource another imports; two loaders claim one resource, or two resources no file arranges contribute one name; a loader needs arguments or has an `async` `load_routes`; an alias is refused. Also the library's own `InvalidArgumentError`, so a `ValueError` |
-| `RouteConflictError` | `setup` finds a contributed route sharing a name with one the application declared, or answered first by one of the application's routes, or answering the same method and path as another contributed route |
-| `RouteCircularReferenceError` | aliases lead back to a name they already passed |
+| `InvalidArgumentError` | a routes file asks for a resource nothing installed contributes, or is `async`; two routes of one resource claim one name; `@as_route_resource` decorates anything but a plain function, or names no resource. Also the library's own `InvalidArgumentError`, so a `ValueError` |
+| `RouteConflictError` | `setup` finds a contributed route sharing a name with one the application declared, answering a method at the path shape of one the application declared, or answering a method and path shape another contributed route answers; or a resource included twice |
 
 ## Layout
 
 ```
 xtr_http_kernel/
 ├── setup.py                        setup(app, kernel), the one call an application makes
+├── _staging.py                     stages the resources, runs the routes files, refuses the collisions
 ├── testing.py                      override_services, for a served application under test
 ├── bridge/                         the request and the response as HTTP messages, both ways
 ├── event/                          the five lifecycle events, one class per file
@@ -730,7 +756,7 @@ xtr_http_kernel/
 ├── middleware_stack.py             the ordered chain a bundle contributes to
 ├── middleware_tag.py               MIDDLEWARE_TAG, the tag bundles agree on
 ├── rate_limiter/                   RateLimited, when xtr-rate-limiter is installed
-├── routing/                        Route, RouteCollection, Router, the loaders and configurators
+├── routing/                        as_route_resource, as_routes, the registry setup stages from
 ├── command/                        debug:router and router:match
 ├── exception/                      HttpKernelError, the root of everything this library raises
 └── bundle/                         HttpKernelBundle and HttpKernelConfig

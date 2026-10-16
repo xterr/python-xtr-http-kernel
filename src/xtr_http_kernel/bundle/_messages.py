@@ -12,7 +12,6 @@ from __future__ import annotations
 from collections.abc import AsyncIterator  # noqa: TC003 — read at runtime, see above.
 from typing import TYPE_CHECKING, Final, cast
 
-from starlette.datastructures import FormData
 from starlette.requests import Request
 from xtr_dependency_injection.integration.fastapi import current_connection
 from xtr_http_message.factory import HttpFactory
@@ -42,6 +41,7 @@ from xtr_http_kernel.bridge import (
     StarletteHttpFactory,
     StarletteHttpFactoryInterface,
 )
+from xtr_http_kernel.bridge.served_request import served_request_of
 from xtr_http_kernel.exception import UnsupportedConnectionError
 
 if TYPE_CHECKING:
@@ -107,17 +107,30 @@ def register(services: ServiceConfigurator) -> None:
 async def server_request(
     messages: HttpMessageFactoryInterface,
 ) -> AsyncIterator[ServerRequestInterface]:
-    """Build the request being served as a message, once for the request.
+    """Hand out the request being served as a message, once for the request.
 
-    The framework's own request object is where it comes from, so the body
-    and the form it carries are the ones already read rather than a second
-    reading of the wire. A form this factory was the one to parse is closed
-    as the request's scope ends — the same moment the framework closes a form
-    it parsed itself, and closing one twice costs nothing — so the files that
-    came with the request stay open for as long as the request does.
+    The message is the served request the lifecycle middleware parked on the
+    connection's scope — the very instance its events carried, so a service
+    and a listener hold one request between them. Without the lifecycle — a
+    bridge-only application — the served request is built here from the
+    framework's own request object, and parked in its turn.
+
+    A body that has a parsed side — a form, JSON — is materialised before the
+    message is handed on: a consumer written against the contract reads
+    ``get_parsed_body()`` without reading the stream first, and this is the
+    seam that can still await — so what the contract promises
+    unconditionally is true by the time anything asks it. A body with no
+    parsed side is left unread, and an endpoint that injects nothing reads
+    the wire itself, untouched.
+
+    A form the served request parsed is closed as the request's scope ends —
+    the same moment the framework closes a form it parsed itself, and
+    idempotent with the lifecycle's own close at the request's exit — so the
+    files that came with the request stay open for as long as the request
+    does.
 
     Args:
-        messages: What builds the message out of the connection.
+        messages: What builds the served request out of the connection.
 
     Yields:
         The request, as a message.
@@ -130,13 +143,14 @@ async def server_request(
     if not isinstance(connection, Request):
         raise UnsupportedConnectionError(cast("str", connection.scope["type"]))
 
-    message = await messages.create_request(connection)
+    served = served_request_of(connection.scope)
+    if served is None:
+        served = messages.serve(connection)
     try:
-        yield message
+        await served.ensure_parsed()
+        yield served
     finally:
-        form = message.get_parsed_body()
-        if isinstance(form, FormData):
-            await form.close()
+        await served.close()
 
 
 def response(responses: ResponseFactoryInterface) -> ResponseInterface:

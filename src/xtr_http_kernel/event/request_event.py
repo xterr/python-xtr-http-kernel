@@ -7,8 +7,10 @@ from typing import TYPE_CHECKING, final
 from xtr_event_dispatcher_contracts import Event
 
 if TYPE_CHECKING:
-    from starlette.requests import Request
+    from collections.abc import MutableMapping
+
     from starlette.responses import Response
+    from xtr_http_message_contracts import ServerRequestInterface
 
 __all__ = ["RequestEvent"]
 
@@ -27,15 +29,27 @@ class RequestEvent(Event):
     response alone; the request then carries on to the router untouched.
     """
 
-    def __init__(self, request: Request) -> None:
-        """Announce ``request``, before anything has handled it."""
+    def __init__(self, request: ServerRequestInterface, state: MutableMapping[str, object]) -> None:
+        """Announce ``request``, before anything has handled it.
+
+        Args:
+            request: The request that arrived, as a message.
+            state: The per-request state bag — the same one the framework's
+                own request wraps — for whatever a listener keeps on it.
+        """
         self._request = request
+        self._state = state
         self._response: Response | None = None
 
     @property
-    def request(self) -> Request:
-        """Return the request that arrived."""
+    def request(self) -> ServerRequestInterface:
+        """Return the request that arrived, as a message."""
         return self._request
+
+    @property
+    def state(self) -> MutableMapping[str, object]:
+        """Return the per-request state bag, shared with the framework's own request."""
+        return self._state
 
     @property
     def response(self) -> Response | None:

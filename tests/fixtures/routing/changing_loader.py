@@ -1,31 +1,37 @@
-"""A loader contributing a different path each time it is asked, and a route reporting it."""
+"""A route reporting the mounted table, for the test that a later life serves the same one.
+
+Routes are mounted once, in ``setup``; no later build changes what the
+application serves, and the reporting endpoint reads what is mounted off the
+application itself.
+"""
 
 from __future__ import annotations
 
-import itertools
+from typing import TYPE_CHECKING, cast
 
-# Read at runtime: the framework reads the endpoint's annotations.
-from xtr_dependency_injection import Injected
+from starlette.requests import Request
 
-from xtr_http_kernel.routing import Route, RouteCollection, RouterInterface
-from xtr_http_kernel.routing.decorator import as_route_loader
+from xtr_http_kernel._route_contexts import route_contexts
+from xtr_http_kernel.routing.decorator import as_route_resource
 
-_VERSIONS = itertools.count(1)
-
-
-async def changing() -> dict[str, str]:
-    return {}
+if TYPE_CHECKING:
+    from fastapi import APIRouter
+    from starlette.applications import Starlette
 
 
-async def table(router: Injected[RouterInterface]) -> dict[str, str]:
-    routes = router.get_route_collection()
-    return {name: route.path for name, route in routes if name == "changing"}
+@as_route_resource("changing")
+def changing_routes(router: APIRouter) -> None:
+    """Fill the router with the reported route and its reporter."""
 
+    @router.get("/v1", name="changing")
+    async def changing() -> dict[str, str]:
+        return {}
 
-@as_route_loader("changing")
-class ChangingRouteLoader:
-    def load_routes(self) -> RouteCollection:
-        routes = RouteCollection()
-        routes.add("changing", Route(f"/v{next(_VERSIONS)}", changing, methods=("GET",)))
-        routes.add("table", Route("/table", table, methods=("GET",)))
-        return routes
+    @router.get("/table", name="table")
+    async def table(request: Request) -> dict[str, str]:
+        app = cast("Starlette", request.app)
+        reported: dict[str, str] = {}
+        for view in route_contexts(app.routes):
+            if view.name == "changing" and view.path is not None:
+                reported[view.name] = view.path
+        return reported

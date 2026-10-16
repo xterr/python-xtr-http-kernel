@@ -54,21 +54,26 @@ def _application() -> FastAPI:
         title: Annotated[str, Form()],
         message: Injected[ServerRequestInterface],
     ) -> dict[str, object]:
+        # The body is read before the fields: a form is parsed when the body
+        # is, so the fields answer only once something has read it.
         return {
             "title": title,
-            "fields": _fields_of(message),
             "body": await message.get_body().get_contents(),
+            "fields": _fields_of(message),
         }
 
     @app.post("/message-first")
     async def message_first(message: Injected[ServerRequestInterface]) -> dict[str, object]:
         return {
-            "fields": _fields_of(message),
             "body": await message.get_body().get_contents(),
+            "fields": _fields_of(message),
         }
 
     @app.post("/files")
     async def files(message: Injected[ServerRequestInterface]) -> dict[str, object]:
+        # The body is read before the form and the files: both answer only
+        # once something has read the body they are parsed from.
+        _ = await message.get_body().get_contents()
         form = cast("FormData", message.get_parsed_body())
         HELD.append(cast("UploadFile", form["doc"]))
         doc = cast("UploadedFileInterface", message.get_uploaded_files()["doc"])
@@ -88,11 +93,12 @@ async def test_the_framework_reads_a_declared_body_before_the_message_is_built()
         response = await client.post("/read-first", data={"title": "dune", "pages": "412"})
 
     # The form the framework parsed is the one the message carries, and the
-    # message's body is empty because that form consumed it.
+    # message's body is empty because that form consumed the wire: a
+    # submitted form is the body, taken apart, and nothing raw is left.
     assert response.json() == {
         "title": "dune",
-        "fields": {"title": "dune", "pages": "412"},
         "body": "",
+        "fields": {"title": "dune", "pages": "412"},
     }
     assert BUILT == ["/read-first"]
 
@@ -101,7 +107,12 @@ async def test_the_message_is_the_first_reader_when_the_route_declares_no_body()
     async with serving(_application()) as client:
         response = await client.post("/message-first", data={"title": "dune", "pages": "412"})
 
-    assert response.json() == {"fields": {"title": "dune", "pages": "412"}, "body": ""}
+    # The message was the first reader, so its stream serves the raw wire
+    # bytes — the form itself, not the empty stream the eager build leaves.
+    assert response.json() == {
+        "body": "title=dune&pages=412",
+        "fields": {"title": "dune", "pages": "412"},
+    }
     assert BUILT == ["/message-first"]
 
 
@@ -138,8 +149,13 @@ async def test_a_declared_file_and_field_are_the_framework_s_own_in_the_message(
         doc: Annotated[UploadFile, File()],
         message: Injected[ServerRequestInterface],
     ) -> dict[str, object]:
+        # The framework read the form first; the message reads the body —
+        # which the framework's parse left nothing raw of — and the fields
+        # answer from the form that parse cached.
+        body = await message.get_body().get_contents()
         return {
             "read": (await doc.read()).decode(),
+            "body": body.decode(),
             "parsed": isinstance(message.get_parsed_body(), FormData),
             "declared": note,
             "in_message": _fields_of(message)["note"],
@@ -153,9 +169,11 @@ async def test_a_declared_file_and_field_are_the_framework_s_own_in_the_message(
         )
 
     # The framework read the file first; the message wraps what it parsed,
-    # which leaves the route's own read of the file untouched.
+    # which leaves the route's own read of the file untouched, and its body
+    # empty — the framework's form parse consumed the wire.
     assert response.json() == {
         "read": "body",
+        "body": "",
         "parsed": True,
         "declared": "keep",
         "in_message": "keep",

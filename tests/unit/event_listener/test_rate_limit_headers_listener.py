@@ -14,28 +14,42 @@ from xtr_http_kernel.event_listener.rate_limit_headers_listener import RateLimit
 from xtr_http_kernel.rate_limiter._applied_rate_limit import STATE_KEY, AppliedRateLimit
 
 if TYPE_CHECKING:
-    from starlette.requests import Request
+    from collections.abc import MutableMapping
+
+    from xtr_http_message_contracts import ServerRequestInterface
 
 _RESET = datetime(2026, 1, 1, tzinfo=UTC)
 
 
-def _apply(request: Request, *, remaining: int = 3, tokens: int = 1, reset: bool = True) -> None:
+def _apply(
+    state: MutableMapping[str, object],
+    *,
+    remaining: int = 3,
+    tokens: int = 1,
+    reset: bool = True,
+) -> None:
     limit = RateLimit(
         remaining, _RESET, accepted=True, limit=10, reset_at=_RESET if reset else None
     )
-    setattr(request.state, STATE_KEY, AppliedRateLimit(limit, tokens))
+    state[STATE_KEY] = AppliedRateLimit(limit, tokens)
 
 
-def _respond(request: Request, headers: MutableHeaders | None = None) -> MutableHeaders:
+def _respond(
+    server_request: ServerRequestInterface,
+    state: MutableMapping[str, object],
+    headers: MutableHeaders | None = None,
+) -> MutableHeaders:
     outgoing = headers if headers is not None else MutableHeaders()
-    RateLimitHeadersListener().on_response(ResponseEvent(request, 200, outgoing))
+    RateLimitHeadersListener().on_response(ResponseEvent(server_request, state, 200, outgoing))
     return outgoing
 
 
-def test_it_reports_the_applied_limit_in_calls(http_request: Request) -> None:
-    _apply(http_request, remaining=5, tokens=2)
+def test_it_reports_the_applied_limit_in_calls(
+    server_request: ServerRequestInterface, state: MutableMapping[str, object]
+) -> None:
+    _apply(state, remaining=5, tokens=2)
 
-    headers = _respond(http_request)
+    headers = _respond(server_request, state)
 
     assert headers["x-ratelimit-limit"] == "5"
     assert headers["x-ratelimit-remaining"] == "2"
@@ -43,20 +57,26 @@ def test_it_reports_the_applied_limit_in_calls(http_request: Request) -> None:
     assert headers["cache-control"] == "private"
 
 
-def test_it_leaves_a_request_without_a_limit_alone(http_request: Request) -> None:
-    assert "x-ratelimit-limit" not in _respond(http_request)
+def test_it_leaves_a_request_without_a_limit_alone(
+    server_request: ServerRequestInterface, state: MutableMapping[str, object]
+) -> None:
+    assert "x-ratelimit-limit" not in _respond(server_request, state)
 
 
-def test_it_leaves_a_limit_without_a_reset_alone(http_request: Request) -> None:
-    _apply(http_request, reset=False)
+def test_it_leaves_a_limit_without_a_reset_alone(
+    server_request: ServerRequestInterface, state: MutableMapping[str, object]
+) -> None:
+    _apply(state, reset=False)
 
-    assert "x-ratelimit-limit" not in _respond(http_request)
+    assert "x-ratelimit-limit" not in _respond(server_request, state)
 
 
-def test_a_response_reporting_its_own_limit_keeps_it(http_request: Request) -> None:
-    _apply(http_request)
+def test_a_response_reporting_its_own_limit_keeps_it(
+    server_request: ServerRequestInterface, state: MutableMapping[str, object]
+) -> None:
+    _apply(state)
 
-    headers = _respond(http_request, MutableHeaders({"X-RateLimit-Remaining": "99"}))
+    headers = _respond(server_request, state, MutableHeaders({"X-RateLimit-Remaining": "99"}))
 
     assert headers["x-ratelimit-remaining"] == "99"
     assert "x-ratelimit-limit" not in headers
@@ -71,10 +91,13 @@ def test_a_response_reporting_its_own_limit_keeps_it(http_request: Request) -> N
     ],
 )
 def test_a_counted_response_is_never_shared(
-    http_request: Request, cache_control: str, expected: str
+    server_request: ServerRequestInterface,
+    state: MutableMapping[str, object],
+    cache_control: str,
+    expected: str,
 ) -> None:
-    _apply(http_request)
+    _apply(state)
 
-    headers = _respond(http_request, MutableHeaders({"cache-control": cache_control}))
+    headers = _respond(server_request, state, MutableHeaders({"cache-control": cache_control}))
 
     assert headers["cache-control"] == expected

@@ -13,7 +13,9 @@ from xtr_http_kernel.event import ExceptionEvent
 from xtr_http_kernel.event_listener import ErrorLoggingListener
 
 if TYPE_CHECKING:
-    from starlette.requests import Request
+    from collections.abc import MutableMapping
+
+    from xtr_http_message_contracts import ServerRequestInterface
     from xtr_logging_contracts import Context, LevelLike
 
 
@@ -42,11 +44,13 @@ class MisstatedError(RuntimeError):
     status_code: ClassVar[str] = "teapot"
 
 
-def test_an_exception_without_a_status_logs_critical(http_request: Request) -> None:
+def test_an_exception_without_a_status_logs_critical(
+    server_request: ServerRequestInterface, state: MutableMapping[str, object]
+) -> None:
     logger = RecordingLogger()
     error = RuntimeError("boom")
 
-    ErrorLoggingListener(logger).on_exception(ExceptionEvent(http_request, error))
+    ErrorLoggingListener(logger).on_exception(ExceptionEvent(server_request, state, error))
 
     (entry,) = logger.entries
     level, _message, context = entry
@@ -55,49 +59,67 @@ def test_an_exception_without_a_status_logs_critical(http_request: Request) -> N
     assert context[EXCEPTION_KEY] is error
 
 
-def test_a_server_error_status_logs_critical(http_request: Request) -> None:
+def test_a_server_error_status_logs_critical(
+    server_request: ServerRequestInterface, state: MutableMapping[str, object]
+) -> None:
     logger = RecordingLogger()
 
     @final
     class UpstreamError(RuntimeError):
         status_code: ClassVar[int] = 503
 
-    ErrorLoggingListener(logger).on_exception(ExceptionEvent(http_request, UpstreamError("down")))
+    ErrorLoggingListener(logger).on_exception(
+        ExceptionEvent(server_request, state, UpstreamError("down"))
+    )
 
     assert logger.entries[0][0] is Level.CRITICAL
 
 
-def test_a_client_error_status_logs_error(http_request: Request) -> None:
+def test_a_client_error_status_logs_error(
+    server_request: ServerRequestInterface, state: MutableMapping[str, object]
+) -> None:
     logger = RecordingLogger()
 
-    ErrorLoggingListener(logger).on_exception(ExceptionEvent(http_request, TeapotError("no")))
+    ErrorLoggingListener(logger).on_exception(
+        ExceptionEvent(server_request, state, TeapotError("no"))
+    )
 
     assert logger.entries[0][0] is Level.ERROR
 
 
-def test_a_status_that_is_not_a_number_counts_as_unknown(http_request: Request) -> None:
+def test_a_status_that_is_not_a_number_counts_as_unknown(
+    server_request: ServerRequestInterface, state: MutableMapping[str, object]
+) -> None:
     logger = RecordingLogger()
 
-    ErrorLoggingListener(logger).on_exception(ExceptionEvent(http_request, MisstatedError("odd")))
+    ErrorLoggingListener(logger).on_exception(
+        ExceptionEvent(server_request, state, MisstatedError("odd"))
+    )
 
     assert logger.entries[0][0] is Level.CRITICAL
 
 
 @pytest.mark.parametrize("raised", [CancelledError(), KeyboardInterrupt(), SystemExit(1)])
 def test_what_is_not_a_failure_is_logged_at_info(
-    http_request: Request, raised: BaseException
+    server_request: ServerRequestInterface,
+    state: MutableMapping[str, object],
+    raised: BaseException,
 ) -> None:
     logger = RecordingLogger()
 
-    ErrorLoggingListener(logger).on_exception(ExceptionEvent(http_request, raised))
+    ErrorLoggingListener(logger).on_exception(ExceptionEvent(server_request, state, raised))
 
     assert logger.entries[0][0] is Level.INFO
 
 
-def test_the_record_names_the_request(http_request: Request) -> None:
+def test_the_record_names_the_request(
+    server_request: ServerRequestInterface, state: MutableMapping[str, object]
+) -> None:
     logger = RecordingLogger()
 
-    ErrorLoggingListener(logger).on_exception(ExceptionEvent(http_request, RuntimeError("boom")))
+    ErrorLoggingListener(logger).on_exception(
+        ExceptionEvent(server_request, state, RuntimeError("boom"))
+    )
 
     context = logger.entries[0][2]
     assert context is not None

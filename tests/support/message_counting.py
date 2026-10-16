@@ -1,10 +1,13 @@
-"""A counter on the one thing that builds a request message.
+"""A counter on the one thing that reads a served request's body.
 
 The bundle here puts its own implementation of the bridge's message factory
-behind the interface the bundle's per-request factory asks for, and that
-implementation delegates to the bridge's own. So every build counted is a
-build that really happened inside a real container — nothing is patched, and
-a route that never asks for the request leaves the journal empty.
+behind the interface the bundle's per-request factory and the lifecycle
+middleware ask for, and that implementation delegates to the bridge's own.
+The head of a served request is built for every request the lifecycle
+middleware serves — that costs no input — so what the journal counts is the
+part that costs: each body a served request materialises, the first time
+something reads its stream. A route that never reads the body leaves the
+journal empty, and nothing is buffered anywhere.
 """
 
 from __future__ import annotations
@@ -13,10 +16,15 @@ from typing import TYPE_CHECKING, Final, final
 
 from typing_extensions import override
 from xtr_dependency_injection import Bundle, as_bundle
+from xtr_http_message_contracts.factory import (
+    StreamFactoryInterface,
+    UriFactoryInterface,
+)
 
-# Read at runtime: the container fills the constructor parameter below, and
+# Read at runtime: the container fills the constructor parameters below, and
 # keys the alias by the interface.
 from xtr_http_kernel.bridge import HttpMessageFactory, HttpMessageFactoryInterface
+from xtr_http_kernel.bridge.served_request import ServedRequest
 
 if TYPE_CHECKING:
     from starlette.requests import Request
@@ -27,17 +35,31 @@ if TYPE_CHECKING:
 __all__ = ["BUILT", "CountingMessages", "MessageCounterBundle"]
 
 BUILT: Final[list[str]] = []
-"""The path of every request that was built as a message, in order."""
+"""The path of every request whose body was materialised, in order."""
 
 
 @final
 class CountingMessages(HttpMessageFactoryInterface):
-    """Journals each request built as a message, then has the bridge build it."""
+    """Journals each body a served request materialised, then has the bridge parse it.
 
-    __slots__ = ("_inner",)
+    Materialising a body parses it per its content type through the eager
+    factory, so every parse counted is a read of a body that really
+    happened, inside a real container — nothing is patched, and a route that
+    never reads the body leaves the journal empty.
+    """
 
-    def __init__(self, inner: HttpMessageFactory) -> None:
+    __slots__ = ("_inner", "_streams", "_uris")
+
+    def __init__(
+        self,
+        inner: HttpMessageFactory,
+        uris: UriFactoryInterface,
+        streams: StreamFactoryInterface,
+    ) -> None:
+        """Count the bodies the bridge reads, parsing them through ``inner``."""
         self._inner = inner
+        self._uris = uris
+        self._streams = streams
 
     @override
     async def create_request(self, request: Request) -> ServerRequestInterface:
@@ -49,6 +71,11 @@ class CountingMessages(HttpMessageFactoryInterface):
     def create_response(self, response: Response) -> ResponseInterface:
         """Return what the bridge makes of ``response``."""
         return self._inner.create_response(response)
+
+    @override
+    def serve(self, request: Request) -> ServedRequest:
+        """Serve ``request`` through the bridge, parsing its body through this."""
+        return ServedRequest(request, self._uris, self._streams, self)
 
 
 @as_bundle("message_counter")

@@ -37,9 +37,10 @@ class RequestIdListener:
     well-formed. Trust is off by default, because a caller choosing its own
     id can collide two requests' log records on purpose; turn it on only
     where a proxy you control sets the header and strips what the caller
-    sent. The id is put on ``request.state.request_id`` for whoever handles
-    the request, and bound to the ambient log context when the logging
-    package is around, so every record made while handling carries it.
+    sent. The id is put on the request's state bag — the one the events and
+    the framework's own request share — for whoever handles the request,
+    and bound to the ambient log context when the logging package is
+    around, so every record made while handling carries it.
 
     At the response: the id goes out under the same header, so the caller
     can quote it back.
@@ -54,12 +55,10 @@ class RequestIdListener:
 
     def on_request(self, event: RequestEvent) -> None:
         """Settle the request's id before anything handles it."""
-        incoming = event.request.headers.get(self._header)
-        keep = (
-            self._trust_incoming and incoming is not None and _VALID_REQUEST_ID.fullmatch(incoming)
-        )
-        request_id = incoming if keep and incoming is not None else uuid4().hex
-        event.request.state.request_id = request_id
+        incoming = event.request.get_header_line(self._header)
+        keep = self._trust_incoming and _VALID_REQUEST_ID.fullmatch(incoming) is not None
+        request_id = incoming if keep else uuid4().hex
+        event.state["request_id"] = request_id
         if _bind_context is not None:
             _bind_context({"request_id": request_id})
 
@@ -70,6 +69,6 @@ class RequestIdListener:
         listener's request half runs, so a response can start without an id
         having been settled; such a response goes out unmarked.
         """
-        request_id = getattr(event.request.state, "request_id", None)
+        request_id = event.state.get("request_id")
         if isinstance(request_id, str):
             event.headers[self._header] = request_id

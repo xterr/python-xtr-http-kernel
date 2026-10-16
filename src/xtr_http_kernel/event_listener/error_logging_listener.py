@@ -45,8 +45,8 @@ class ErrorLoggingListener:
         self._write_for(event.exception)(
             "handling {method} {path} raised",
             {
-                "method": event.request.method,
-                "path": event.request.url.path,
+                "method": event.request.get_method(),
+                "path": event.request.get_uri().get_path(),
                 EXCEPTION_KEY: event.exception,
             },
         )

@@ -1,35 +1,32 @@
-"""Two route loaders, as a bundle would ship them."""
+"""Two route resources, as a bundle would ship them."""
 
 from __future__ import annotations
 
-from xtr_http_kernel.routing import Route, RouteCollection
-from xtr_http_kernel.routing.decorator import as_route_loader
+from typing import TYPE_CHECKING
+
+from xtr_http_kernel.routing.decorator import as_route_resource
+
+if TYPE_CHECKING:
+    from fastapi import APIRouter
 
 
-async def list_books() -> dict[str, str]:
-    return {"books": "all"}
+@as_route_resource("books")
+def books_routes(router: APIRouter) -> None:
+    """Fill the router with the books endpoints."""
+
+    @router.get("/books", name="books_list")
+    async def list_books() -> dict[str, str]:
+        return {"books": "all"}
+
+    @router.get("/books/{book_id}", name="books_show")
+    async def show_book(book_id: str) -> dict[str, str]:
+        return {"book": book_id}
 
 
-async def show_book() -> dict[str, str]:
-    return {"book": "one"}
+@as_route_resource("well_known")
+def well_known_routes(router: APIRouter) -> None:
+    """Fill the router with the document a standard places."""
 
-
-async def describe() -> dict[str, str]:
-    return {"issuer": "here"}
-
-
-@as_route_loader("books")
-class BooksRouteLoader:
-    def load_routes(self) -> RouteCollection:
-        routes = RouteCollection()
-        routes.add("books_list", Route("/books", list_books, methods=("GET",)))
-        routes.add("books_show", Route("/books/{book_id}", show_book, methods=("GET",)))
-        return routes
-
-
-@as_route_loader("well_known", prefixable=False)
-class WellKnownRouteLoader:
-    def load_routes(self) -> RouteCollection:
-        routes = RouteCollection()
-        routes.add("metadata", Route("/.well-known/metadata", describe, methods=("GET",)))
-        return routes
+    @router.get("/.well-known/metadata", name="metadata")
+    async def describe() -> dict[str, str]:
+        return {"issuer": "here"}

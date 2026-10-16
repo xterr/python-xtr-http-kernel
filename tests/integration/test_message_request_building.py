@@ -144,12 +144,15 @@ async def test_a_route_reading_the_body_as_a_stream_builds_no_request_message() 
     assert BUILT == []
 
 
-async def test_a_route_that_asks_builds_the_request_message_once() -> None:
+async def test_a_route_that_asks_builds_no_body_off_the_wire() -> None:
     async with serving(_application()) as client:
         response = await client.get("/asked")
 
     assert response.json() == {"path": "/asked"}
-    assert BUILT == ["/asked"]
+    # The head of the served request is built for every request the
+    # lifecycle serves; what costs is the body, and this route reads only
+    # the URI — so nothing is materialised.
+    assert BUILT == []
 
 
 async def test_a_twenty_megabyte_upload_is_neither_built_nor_buffered() -> None:
@@ -167,5 +170,7 @@ async def test_the_same_upload_is_held_whole_once_a_route_asks_for_it() -> None:
     sent, length, peak = await _peak_of("/asked-streamed")
 
     assert json.loads(body_of(sent)) == {"length": length}
+    # The route asked for the body, so it was materialised — once, and the
+    # whole of it, which is what passes the budget above.
     assert BUILT == ["/asked-streamed"]
     assert peak > length

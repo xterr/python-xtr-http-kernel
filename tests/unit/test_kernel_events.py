@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 from starlette.datastructures import MutableHeaders
-from starlette.requests import Request
 from xtr_event_dispatcher import EventDispatcher
 from xtr_event_dispatcher_contracts import Event, event_name_of
 
@@ -16,6 +17,11 @@ from xtr_http_kernel import (
     ResponseEvent,
     TerminateEvent,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import MutableMapping
+
+    from xtr_http_message_contracts import ServerRequestInterface
 
 pytestmark = pytest.mark.anyio
 
@@ -50,7 +56,8 @@ def test_the_five_names_are_distinct() -> None:
 
 
 async def test_a_listener_added_by_name_hears_the_event_dispatched_by_class(
-    http_request: Request,
+    server_request: ServerRequestInterface,
+    state: MutableMapping[str, object],
 ) -> None:
     dispatcher = EventDispatcher()
     heard: list[Event] = []
@@ -65,11 +72,11 @@ async def test_a_listener_added_by_name_hears_the_event_dispatched_by_class(
     dispatcher.add_listener(KernelEvents.TERMINATE, remember)
 
     for event in (
-        RequestEvent(http_request),
-        ResponseEvent(http_request, 200, MutableHeaders(raw=[])),
-        ExceptionEvent(http_request, RuntimeError("boom")),
-        FinishRequestEvent(http_request),
-        TerminateEvent(http_request, 200),
+        RequestEvent(server_request, state),
+        ResponseEvent(server_request, state, 200, MutableHeaders(raw=[])),
+        ExceptionEvent(server_request, state, RuntimeError("boom")),
+        FinishRequestEvent(server_request, state),
+        TerminateEvent(server_request, state, 200),
     ):
         _ = await dispatcher.dispatch(event)
 

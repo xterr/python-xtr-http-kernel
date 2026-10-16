@@ -16,8 +16,13 @@ from .event import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import MutableMapping
+
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
     from xtr_event_dispatcher_contracts import EventDispatcherInterface
+
+    from .bridge.http_message_factory_interface import HttpMessageFactoryInterface
+    from .bridge.served_request import ServedRequest
 
 __all__ = ["RequestLifecycleMiddleware"]
 
@@ -44,18 +49,29 @@ class _Lifecycle:
     at most once however the request went.
     """
 
-    __slots__ = ("_dispatcher", "_finished", "_request", "_send", "_status_sent")
+    __slots__ = ("_dispatcher", "_finished", "_request", "_send", "_state", "_status_sent")
 
-    def __init__(self, dispatcher: EventDispatcherInterface, request: Request, send: Send) -> None:
+    def __init__(
+        self,
+        dispatcher: EventDispatcherInterface,
+        request: ServedRequest,
+        state: MutableMapping[str, object],
+        send: Send,
+    ) -> None:
         self._dispatcher = dispatcher
         self._request = request
+        self._state = state
         self._send = send
         self._status_sent: int | None = None
         self._finished = False
 
     @property
-    def request(self) -> Request:
+    def request(self) -> ServedRequest:
         return self._request
+
+    @property
+    def state(self) -> MutableMapping[str, object]:
+        return self._state
 
     @property
     def response_started(self) -> bool:
@@ -71,6 +87,7 @@ class _Lifecycle:
         if message_type == "http.response.start" and self._status_sent is None:
             event = ResponseEvent(
                 self._request,
+                self._state,
                 cast("int", message["status"]),
                 # The message's own header list, so what a listener writes is
                 # what leaves.
@@ -89,7 +106,7 @@ class _Lifecycle:
         """Declare handling finished, the first time this is asked for."""
         if not self._finished:
             self._finished = True
-            _ = await self._dispatcher.dispatch(FinishRequestEvent(self._request))
+            _ = await self._dispatcher.dispatch(FinishRequestEvent(self._request, self._state))
 
 
 @final
@@ -97,11 +114,16 @@ class RequestLifecycleMiddleware:
     """Announces each moment of a request's life to whoever listens.
 
     Sits between the server and the application as plain middleware — built
-    from an application and a dispatcher, nothing else — so a framework
-    registers it the way it registers any other:
+    from an application, a dispatcher and the bridge's message factory,
+    nothing else — so a framework registers it the way it registers any
+    other:
 
     ```python
-    app.add_middleware(RequestLifecycleMiddleware, dispatcher=dispatcher)
+    app.add_middleware(
+        RequestLifecycleMiddleware,
+        dispatcher=dispatcher,
+        messages=HttpMessageFactory(...),
+    )
     ```
 
     Every request then goes through the same sequence, whatever becomes of
@@ -116,7 +138,15 @@ class RequestLifecycleMiddleware:
     before the last body chunk leaves — or before an unanswered failure
     propagates — and
     :class:`~xtr_http_kernel.event.terminate_event.TerminateEvent` last, with
-    the status that was sent. Each event at most once per request.
+    the status that was sent. Each event at most once per request, and every
+    one of them carries the request as a message — the served request, built
+    from the connection alone, its body read only if a listener asks to read
+    it — plus the per-request state bag the framework's own request wraps.
+
+    A listener that does read the body drains the wire, so the application is
+    handed a receive that replays the buffered bytes; a request no listener
+    reads passes through untouched. A form the served request parsed is
+    closed as the request leaves.
 
     A failure nobody answered propagates as it arrived: turning it into a
     response is the application's business, not this middleware's. Only the
@@ -128,12 +158,27 @@ class RequestLifecycleMiddleware:
     overlapping requests each trace only their own events.
     """
 
-    __slots__ = ("_app", "_dispatcher")
+    __slots__ = ("_app", "_dispatcher", "_messages")
 
-    def __init__(self, app: ASGIApp, *, dispatcher: EventDispatcherInterface) -> None:
-        """Wrap ``app``, announcing every request to ``dispatcher``'s listeners."""
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        dispatcher: EventDispatcherInterface,
+        messages: HttpMessageFactoryInterface,
+    ) -> None:
+        """Wrap ``app``, announcing every request to ``dispatcher``'s listeners.
+
+        Args:
+            app: The application whose requests are announced.
+            dispatcher: Where the lifecycle's events go.
+            messages: Builds each request's served request message — the
+                bridge's own factory when the container builds this, built by
+                hand when nothing does.
+        """
         self._app = app
         self._dispatcher = dispatcher
+        self._messages = messages
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Carry one connection through, dispatching the lifecycle when it is a request."""
@@ -141,7 +186,11 @@ class RequestLifecycleMiddleware:
             await self._app(scope, receive, send)
             return
 
-        lifecycle = _Lifecycle(self._dispatcher, Request(scope, receive), send)
+        served = self._messages.serve(Request(scope, receive))
+        # The same bag the framework's own request wraps, created here so a
+        # listener and the framework write one state between them.
+        state = cast("MutableMapping[str, object]", scope.setdefault("state", {}))
+        lifecycle = _Lifecycle(self._dispatcher, served, state, send)
         unit = (
             self._dispatcher
             if isinstance(self._dispatcher, _UnitScopedDispatcher)
@@ -155,24 +204,33 @@ class RequestLifecycleMiddleware:
             await self._handle(scope, receive, lifecycle)
         finally:
             try:
-                _ = await self._dispatcher.dispatch(
-                    TerminateEvent(lifecycle.request, lifecycle.status_sent)
-                )
+                try:
+                    _ = await self._dispatcher.dispatch(
+                        TerminateEvent(served, state, lifecycle.status_sent)
+                    )
+                finally:
+                    if unit is not None:
+                        unit.end_unit()
             finally:
-                if unit is not None:
-                    unit.end_unit()
+                # A form a listener parsed through the served request is
+                # closed even when no scoped service ever asked for one.
+                await served.close()
 
     async def _handle(self, scope: Scope, receive: Receive, lifecycle: _Lifecycle) -> None:
-        request_event = RequestEvent(lifecycle.request)
+        request_event = RequestEvent(lifecycle.request, lifecycle.state)
         _ = await self._dispatcher.dispatch(request_event)
         answer = request_event.response
         if answer is not None:
             await answer(scope, receive, lifecycle.send)
             return
+        # A listener that read the served request's body drained the wire, so
+        # the application is handed the buffered bytes back; otherwise the
+        # original channel passes through untouched.
+        app_receive = await lifecycle.request.replay(receive)
         try:
-            await self._app(scope, receive, lifecycle.send)
+            await self._app(scope, app_receive, lifecycle.send)
         except BaseException as error:
-            exception_event = ExceptionEvent(lifecycle.request, error)
+            exception_event = ExceptionEvent(lifecycle.request, lifecycle.state, error)
             _ = await self._dispatcher.dispatch(exception_event)
             answer = exception_event.response
             # Only a failure is answered: a cancellation, an interrupt or an exit goes on
