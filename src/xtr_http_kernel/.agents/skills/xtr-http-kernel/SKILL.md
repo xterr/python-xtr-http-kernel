@@ -145,7 +145,8 @@ async def issue(
 ```
 
 - **The served request, read through the connection.** The request the events carry and a route
-  injects is one `ServedRequest` per request: its head is read off the connection, its body is a
+  injects is one `xtr_http_message.ServerRequest` per request, born connected over the bridge's
+  `ServedConnection`: its head is read off the connection, its body is a
   lazy stream, and nothing crosses the wire until a listener or an endpoint reads that stream.
   The first read materialises the whole body once, parsing it per its content type; every later
   read is served out of the buffer, seekable and rewindable.

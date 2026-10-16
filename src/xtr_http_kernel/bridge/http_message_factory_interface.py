@@ -7,9 +7,8 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from starlette.requests import Request
     from starlette.responses import Response
+    from xtr_http_message import ServerRequest
     from xtr_http_message_contracts import ResponseInterface, ServerRequestInterface
-
-    from .served_request import ServedRequest
 
 __all__ = ["HttpMessageFactoryInterface"]
 
@@ -23,14 +22,19 @@ class HttpMessageFactoryInterface(Protocol):
     than reading it a second time.
     """
 
-    def serve(self, request: Request) -> ServedRequest:
-        """Return ``request`` as a served request: a read-through view over its connection.
+    def serve(self, request: Request) -> ServerRequest:
+        """Return ``request`` as a served request: a message born connected to its connection.
 
         Unlike :meth:`create_request`, nothing is read: the head is built
-        from the connection alone, and the body is one lazy stream that
+        from the connection alone, and the body side is answered by the
+        connection the message is connected to — one lazy stream that
         materialises the first time anything reads it. This is the message
         the request lifecycle hands its events, so that a listener may look
         at a request without the cost of reading it.
+
+        The connection the message reads through parks itself on the
+        request's scope, and the message it serves is answered from there
+        however many times this is called: one request, one message.
 
         Args:
             request: The request the framework is serving.

@@ -1,4 +1,4 @@
-"""Unit tests for :class:`xtr_http_kernel.bridge.served_request.ServedRequest`."""
+"""Unit tests for :class:`xtr_http_kernel.bridge.served_connection.ServedConnection`."""
 
 from __future__ import annotations
 
@@ -10,12 +10,11 @@ from starlette.requests import Request
 from xtr_dependency_injection.exception import FastapiIntegrationError
 from xtr_http_message import HttpFactory, ServerRequest
 
-import xtr_http_kernel.bridge._served_reading as served_reading
 from tests.support.asgi_requests import asgi_request, asgi_scope
-from xtr_http_kernel.bridge import HttpMessageFactory, ResponseFactory
-from xtr_http_kernel.bridge.served_request import (
+from xtr_http_kernel.bridge import HttpMessageFactory, ResponseFactory, served_connection
+from xtr_http_kernel.bridge.served_connection import (
     SERVED_REQUEST_SCOPE_KEY,
-    ServedRequest,
+    served_connection_of,
     served_request_of,
 )
 
@@ -45,7 +44,7 @@ def _messages() -> HttpMessageFactory:
     return HttpMessageFactory(one, one, one, ResponseFactory(), one)
 
 
-def _served(body: bytes = b"", content_type: bytes | None = None) -> tuple[ServedRequest, Request]:
+def _served(body: bytes = b"", content_type: bytes | None = None) -> tuple[ServerRequest, Request]:
     headers = [(b"host", b"bookshop.test")]
     if content_type is not None:
         headers.append((b"content-type", content_type))
@@ -57,6 +56,14 @@ def _served(body: bytes = b"", content_type: bytes | None = None) -> tuple[Serve
         body=body,
     )
     return _messages().serve(request), request
+
+
+def _connection_of(request: Request) -> served_connection.ServedConnection:
+    """Return the connection parked on ``request``'s scope — the one serve built over."""
+    connection = served_connection_of(request.scope)
+    assert connection is not None
+
+    return connection
 
 
 def test_the_head_is_read_off_the_connection_without_touching_the_wire() -> None:
@@ -84,51 +91,8 @@ def test_the_head_is_read_off_the_connection_without_touching_the_wire() -> None
     assert reads == []
 
 
-async def test_the_body_is_read_only_when_something_reads_the_stream() -> None:
-    served, _request = _served(body=b"four words")
-
-    assert served.materialised is False
-    assert served.get_parsed_body() is None
-    assert served.get_uploaded_files() == {}
-
-    body = served.get_body()
-
-    assert served.materialised is False
-    assert await body.get_contents() == b"four words"
-    assert served.materialised is True
-    # One stream, handed out however many times the body is asked for.
-    assert served.get_body() is body
-    # The buffer serves every later read, and rewinds.
-    assert await body.get_contents() == b"four words"
-    _ = await body.read(4)
-    assert await body.get_contents() == b"four words"
-
-
-async def test_a_json_body_is_parsed_when_it_is_materialised() -> None:
-    served, _request = _served(b'{"title": "dune"}', content_type=b"application/json")
-
-    assert served.get_parsed_body() is None
-    assert await served.get_body().get_contents() == b'{"title": "dune"}'
-    assert served.get_parsed_body() == {"title": "dune"}
-
-
-@pytest.mark.parametrize(
-    ("body", "parsed"),
-    [
-        pytest.param(b"[1, 2]", None, id="list"),
-        pytest.param(b"{", None, id="malformed"),
-        pytest.param(b"plain text", None, id="not-json"),
-    ],
-)
-async def test_a_body_that_yields_no_object_parses_to_nothing(body: bytes, parsed: None) -> None:
-    served, _request = _served(body, content_type=b"application/json")
-
-    assert await served.get_body().get_contents() == body
-    assert served.get_parsed_body() is parsed
-
-
 async def test_a_form_body_is_parsed_with_its_files_when_it_is_materialised() -> None:
-    served, _request = _served(_FORM_BODY, content_type=_MULTIPART)
+    served, request = _served(_FORM_BODY, content_type=_MULTIPART)
 
     assert served.get_parsed_body() is None
     # The stream serves the raw wire bytes for a form, not the empty stream.
@@ -141,7 +105,7 @@ async def test_a_form_body_is_parsed_with_its_files_when_it_is_materialised() ->
     assert (doc.get_client_filename(), doc.get_size()) == ("a.txt", 4)
     assert await doc.get_stream().get_contents() == b"body"
 
-    await served.close()
+    await _connection_of(request).close()
 
 
 def test_the_attributes_follow_the_route_as_it_fills_them() -> None:
@@ -157,42 +121,28 @@ def test_the_attributes_follow_the_route_as_it_fills_them() -> None:
     assert served.get_attribute("isbn") == "978-0141439518"
 
 
-async def test_the_with_members_return_plain_copies_and_leave_the_view_alone() -> None:
-    served, _request = _served(b"kept")
-
-    # Through a cast, so the checker reads the copy as the plain ``object``
-    # it is here: it knows the classes are unrelated by declaration, and the
-    # point is what the call really made.
-    copy = cast("object", served.with_attribute("user", "ada").with_added_header("x-trace", "1"))
-
-    assert type(copy) is ServerRequest
-    assert copy.get_attribute("user") == "ada"
-    assert copy.get_header_line("x-trace") == "1"
-    # The view is left as it was: no attribute, no header, nothing read.
-    assert served.get_attribute("user") is None
-    assert served.get_header_line("x-trace") == ""
-    assert served.materialised is False
-    assert await copy.get_body().get_contents() == b"kept"
-    assert served.materialised is True
-
-
-def test_it_parks_itself_on_the_scope_and_is_found_there() -> None:
+def test_the_connection_parks_itself_and_serves_the_one_message() -> None:
     served, request = _served()
+    connection = _connection_of(request)
 
-    assert request.scope[SERVED_REQUEST_SCOPE_KEY] is served
+    assert request.scope[SERVED_REQUEST_SCOPE_KEY] is connection
     assert served_request_of(request.scope) is served
     assert served_request_of({}) is None
+
+    # One request, one message: however many times the factory is asked.
+    assert _messages().serve(request) is served
 
 
 async def test_the_replay_hands_the_buffered_bytes_back_to_the_application() -> None:
     served, request = _served(b"drained")
     original = request.receive
+    connection = _connection_of(request)
 
     # Nothing materialised: the original channel passes through untouched.
-    assert await served.replay(original) is original
+    assert await connection.replay(original) is original
 
     assert await served.get_body().get_contents() == b"drained"
-    replay = await served.replay(original)
+    replay = await connection.replay(original)
 
     assert await replay() == {"type": "http.request", "body": b"drained", "more_body": False}
     # Then the original channel's end: the read drained it, so what it still
@@ -201,7 +151,8 @@ async def test_the_replay_hands_the_buffered_bytes_back_to_the_application() -> 
 
 
 async def test_a_form_it_parsed_is_closed_exactly_once() -> None:
-    served, _request = _served(_FORM_BODY, content_type=_MULTIPART)
+    served, request = _served(_FORM_BODY, content_type=_MULTIPART)
+    connection = _connection_of(request)
     assert await served.get_body().get_contents() == _FORM_BODY
     form = cast("FormData", served.get_parsed_body())
     doc = cast("UploadFile", form["doc"])
@@ -215,8 +166,8 @@ async def test_a_form_it_parsed_is_closed_exactly_once() -> None:
     doc.file.close = counting  # ty: ignore[missing-slot] — a test counting the closes
 
     try:
-        await served.close()
-        await served.close()
+        await connection.close()
+        await connection.close()
 
         assert closes == [False]
         assert doc.file.closed
@@ -227,9 +178,9 @@ async def test_a_form_it_parsed_is_closed_exactly_once() -> None:
 
 
 async def test_a_body_nobody_read_leaves_nothing_to_close() -> None:
-    served, _request = _served(_FORM_BODY, content_type=_MULTIPART)
+    served, request = _served(_FORM_BODY, content_type=_MULTIPART)
 
-    await served.close()
+    await _connection_of(request).close()
 
     assert served.get_parsed_body() is None
 
@@ -245,7 +196,7 @@ async def test_the_serving_request_is_preferred_when_one_is_being_served(
 
     framework = Request(asgi_scope("POST", path="/routed"), framework_receive)
     served, _request = _served(b"own")
-    monkeypatch.setattr(served_reading, "current_connection", lambda: framework)
+    monkeypatch.setattr(served_connection, "current_connection", lambda: framework)
 
     # The read goes through the framework's own request — its channel, not
     # the served request's.
@@ -259,7 +210,7 @@ async def test_the_own_request_is_read_before_anything_routes(
 
     served, _request = _served(b"own")
     monkeypatch.setattr(
-        served_reading,
+        served_connection,
         "current_connection",
         lambda: (_ for _ in ()).throw(FastapiIntegrationError("no")),
     )

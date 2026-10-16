@@ -217,14 +217,15 @@ async def issue(
     return response.with_status(201).with_header("content-type", "application/json")
 ```
 
-- **The served request, read through the connection.** The request the events carry is a
-  `ServedRequest`: its head — method, URI, headers, cookies, query parameters, environment
-  parameters, protocol version — is read straight off the connection, and its body is one lazy
-  stream. Nothing is read off the wire until a listener or an endpoint reads that stream; the
-  first read materialises the whole body once, parsing it per its content type on the way, and
-  every later read is served out of the buffer, seekable and rewindable. One instance is parked
-  on the connection's scope, so the events, the scoped `server_request` service and a route's
-  injected message are all the same object.
+- **The served request, read through the connection.** The request the events carry is the
+  message package's own `ServerRequest`, born connected over the bridge's `ServedConnection`:
+  its head — method, URI, headers, cookies, query parameters, environment parameters, protocol
+  version — is read straight off the connection, and its body is one lazy stream. Nothing is
+  read off the wire until a listener or an endpoint reads that stream; the first read
+  materialises the whole body once, parsing it per its content type on the way, and every later
+  read is served out of the buffer, seekable and rewindable. One instance is parked on the
+  connection's scope, so the events, the scoped `server_request` service and a route's injected
+  message are all the same object.
 - **A listener that reads the body drains the wire** — so the application is handed a `receive`
   that replays the buffered bytes, and its routes read the body the caller sent as if nobody
   had. A request no listener reads passes its original channel through untouched: nothing is

@@ -103,7 +103,9 @@ def _application(dispatcher: EventDispatcher) -> FastAPI:
     def unit_seen_sync() -> PlainTextResponse:
         return PlainTextResponse(_UNIT.get())
 
-    app.add_middleware(RequestLifecycleMiddleware, dispatcher=dispatcher, messages=_messages())
+    app.add_middleware(
+        RequestLifecycleMiddleware, dispatcher=dispatcher, message_factory=_messages()
+    )
     return app
 
 

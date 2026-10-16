@@ -10,6 +10,7 @@ from typing_extensions import override
 
 # Read at runtime: the container fills these constructor parameters from the
 # annotations, and the upload outcome is a value this module names.
+from xtr_http_message import ServerRequest
 from xtr_http_message_contracts import UploadError
 from xtr_http_message_contracts.factory import (
     ResponseFactoryInterface,  # noqa: TC002 — read at runtime, as above.
@@ -30,9 +31,10 @@ from ._media_types import is_form as _is_form
 from ._media_types import is_json as _is_json
 from ._media_types import media_type_of as _media_type
 from ._scope_uri import scope_uri
+from ._server_params import _DEFAULT_PROTOCOL, _server_params
 from .http_message_factory_interface import HttpMessageFactoryInterface
 from .response import Response as BridgeResponse
-from .served_request import ServedRequest
+from .served_connection import ServedConnection, served_connection_of
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -40,7 +42,6 @@ if TYPE_CHECKING:
     from starlette.datastructures import FormData
     from starlette.requests import Request
     from starlette.responses import Response
-    from starlette.types import Scope
     from xtr_http_message_contracts import (
         ResponseInterface,
         ServerRequestInterface,
@@ -50,34 +51,7 @@ if TYPE_CHECKING:
 
 __all__ = ["HttpMessageFactory"]
 
-_SERVER_PARAMS: Final = (
-    "type",
-    "http_version",
-    "method",
-    "scheme",
-    "path",
-    "root_path",
-    "query_string",
-    "server",
-    "client",
-)
-"""What the connection says about itself, as the request's environment.
-
-A message's environment parameters are whatever the server knows about the
-request besides the request itself. Here that is the connection as the server
-described it, minus the entries that are the framework's own machinery — the
-headers, the matched route, the application — which the message carries in
-its own right or has no business repeating.
-"""
-
-_DEFAULT_PROTOCOL: Final = "1.1"
-
 _CONTENT_RANGE: Final = "content-range"
-
-
-def _server_params(scope: Scope) -> Mapping[str, object]:
-    """Return the connection's own entries, under the names the server gave them."""
-    return {key: cast("object", scope[key]) for key in _SERVER_PARAMS if key in scope}
 
 
 @final
@@ -111,15 +85,21 @@ class HttpMessageFactory(HttpMessageFactoryInterface):
     still works.
     """
 
-    __slots__ = ("_responses", "_server_requests", "_streams", "_uploads", "_uris")
+    __slots__ = (
+        "_response_factory",
+        "_server_request_factory",
+        "_stream_factory",
+        "_uploaded_file_factory",
+        "_uri_factory",
+    )
 
     def __init__(
         self,
-        server_requests: ServerRequestFactoryInterface,
-        streams: StreamFactoryInterface,
-        uploads: UploadedFileFactoryInterface,
-        responses: ResponseFactoryInterface,
-        uris: UriFactoryInterface,
+        server_request_factory: ServerRequestFactoryInterface,
+        stream_factory: StreamFactoryInterface,
+        uploaded_file_factory: UploadedFileFactoryInterface,
+        response_factory: ResponseFactoryInterface,
+        uri_factory: UriFactoryInterface,
     ) -> None:
         """Build messages through the factories the application registered.
 
@@ -129,26 +109,31 @@ class HttpMessageFactory(HttpMessageFactoryInterface):
         passed is not available.
 
         Args:
-            server_requests: Builds the request message.
-            streams: Builds every body, and wraps every uploaded file.
-            uploads: Builds the uploaded files.
-            responses: Builds the response message.
-            uris: Builds the URI of the request.
+            server_request_factory: Builds the request message.
+            stream_factory: Builds every body, and wraps every uploaded file.
+            uploaded_file_factory: Builds the uploaded files.
+            response_factory: Builds the response message.
+            uri_factory: Builds the URI of the request.
         """
-        self._server_requests = server_requests
-        self._streams = streams
-        self._uploads = uploads
-        self._responses = responses
-        self._uris = uris
+        self._server_request_factory = server_request_factory
+        self._stream_factory = stream_factory
+        self._uploaded_file_factory = uploaded_file_factory
+        self._response_factory = response_factory
+        self._uri_factory = uri_factory
 
     @override
-    def serve(self, request: Request) -> ServedRequest:
+    def serve(self, request: Request) -> ServerRequest:
         """Return ``request`` as a served request, reading nothing off the wire.
 
         The head is built from the connection alone and the body is left
-        lazy — see :class:`~xtr_http_kernel.bridge.served_request.ServedRequest`
+        lazy — the message is born connected to a
+        :class:`~xtr_http_kernel.bridge.served_connection.ServedConnection`
         — so the lifecycle can hand a request message to its listeners
         without any of them costing a request its stream.
+
+        The connection the message reads through parks itself on the
+        request's scope, and the message it serves is answered from there
+        however many times this is called: one request, one message.
 
         Args:
             request: The request the framework is serving.
@@ -156,7 +141,28 @@ class HttpMessageFactory(HttpMessageFactoryInterface):
         Returns:
             The same request, as a message nothing has read the body of.
         """
-        return ServedRequest(request, self._uris, self._streams, self)
+        connection = served_connection_of(request.scope)
+        if connection is None:
+            connection = ServedConnection(request, self)
+
+        message = connection.message
+        if message is None:
+            message = connection.park(
+                ServerRequest.over(
+                    request.method,
+                    scope_uri(self._uri_factory, request.scope),
+                    source=connection,
+                    headers=grouped_headers(request.headers.raw),
+                    server_params=_server_params(request.scope),
+                    cookies=request.cookies,
+                    query=request.query_params,
+                    protocol_version=cast(
+                        "str", request.scope.get("http_version", _DEFAULT_PROTOCOL)
+                    ),
+                )
+            )
+
+        return message
 
     @override
     async def create_request(self, request: Request) -> ServerRequestInterface:
@@ -173,9 +179,9 @@ class HttpMessageFactory(HttpMessageFactoryInterface):
             The same request, as a message.
         """
         scope = request.scope
-        message = self._server_requests.create_server_request(
+        message = self._server_request_factory.create_server_request(
             request.method,
-            scope_uri(self._uris, scope),
+            scope_uri(self._uri_factory, scope),
             _server_params(scope),
         )
 
@@ -229,7 +235,7 @@ class HttpMessageFactory(HttpMessageFactoryInterface):
         if isinstance(response, BridgeResponse):
             raise ResponseAlreadyAMessageError(type(response).__name__)
 
-        message = self._responses.create_response(response.status_code).with_body(
+        message = self._response_factory.create_response(response.status_code).with_body(
             self._response_body(response)
         )
 
@@ -249,9 +255,9 @@ class HttpMessageFactory(HttpMessageFactoryInterface):
         the fields are its parsed body instead.
         """
         if form is not None:
-            return self._streams.create_stream()
+            return self._stream_factory.create_stream()
 
-        return self._streams.create_stream(await request.body())
+        return self._stream_factory.create_stream(await request.body())
 
     def _response_body(self, response: Response) -> StreamInterface:
         """Return the body of a response message, read from wherever it sits.
@@ -264,7 +270,7 @@ class HttpMessageFactory(HttpMessageFactoryInterface):
         """
         rendered = cast("bytes | memoryview | None", getattr(response, "body", None))
         if rendered is not None:
-            return self._streams.create_stream(bytes(rendered))
+            return self._stream_factory.create_stream(bytes(rendered))
 
         path = cast("object", getattr(response, "path", None))
         if isinstance(path, (str, os.PathLike)):
@@ -272,7 +278,7 @@ class HttpMessageFactory(HttpMessageFactoryInterface):
             if declared is not None:
                 raise RangedResponseBodyError(type(response).__name__, declared)
 
-            return self._streams.create_stream_from_file(os.fsdecode(path), "rb")
+            return self._stream_factory.create_stream_from_file(os.fsdecode(path), "rb")
 
         raise StreamedResponseBodyError(type(response).__name__)
 
@@ -333,12 +339,12 @@ class HttpMessageFactory(HttpMessageFactoryInterface):
         question.
         """
         if upload.filename is None or upload.filename == "":
-            return self._uploads.create_uploaded_file(
-                self._streams.create_stream(), 0, UploadError.NO_FILE
+            return self._uploaded_file_factory.create_uploaded_file(
+                self._stream_factory.create_stream(), 0, UploadError.NO_FILE
             )
 
-        return self._uploads.create_uploaded_file(
-            self._streams.create_stream_from_resource(upload.file),
+        return self._uploaded_file_factory.create_uploaded_file(
+            self._stream_factory.create_stream_from_resource(upload.file),
             upload.size,
             UploadError.OK,
             upload.filename,

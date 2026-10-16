@@ -16,15 +16,12 @@ from typing import TYPE_CHECKING, Final, final
 
 from typing_extensions import override
 from xtr_dependency_injection import Bundle, as_bundle
-from xtr_http_message_contracts.factory import (
-    StreamFactoryInterface,
-    UriFactoryInterface,
-)
+from xtr_http_message import ServerRequest
 
-# Read at runtime: the container fills the constructor parameters below, and
+# Read at runtime: the container fills the constructor parameter below, and
 # keys the alias by the interface.
 from xtr_http_kernel.bridge import HttpMessageFactory, HttpMessageFactoryInterface
-from xtr_http_kernel.bridge.served_request import ServedRequest
+from xtr_http_kernel.bridge.served_connection import ServedConnection, served_connection_of
 
 if TYPE_CHECKING:
     from starlette.requests import Request
@@ -48,18 +45,11 @@ class CountingMessages(HttpMessageFactoryInterface):
     never reads the body leaves the journal empty.
     """
 
-    __slots__ = ("_inner", "_streams", "_uris")
+    __slots__ = ("_inner",)
 
-    def __init__(
-        self,
-        inner: HttpMessageFactory,
-        uris: UriFactoryInterface,
-        streams: StreamFactoryInterface,
-    ) -> None:
-        """Count the bodies the bridge reads, parsing them through ``inner``."""
-        self._inner = inner
-        self._uris = uris
-        self._streams = streams
+    def __init__(self, message_factory: HttpMessageFactory) -> None:
+        """Count the bodies the bridge reads, parsing them through ``message_factory``."""
+        self._inner = message_factory
 
     @override
     async def create_request(self, request: Request) -> ServerRequestInterface:
@@ -73,9 +63,13 @@ class CountingMessages(HttpMessageFactoryInterface):
         return self._inner.create_response(response)
 
     @override
-    def serve(self, request: Request) -> ServedRequest:
+    def serve(self, request: Request) -> ServerRequest:
         """Serve ``request`` through the bridge, parsing its body through this."""
-        return ServedRequest(request, self._uris, self._streams, self)
+        if served_connection_of(request.scope) is None:
+            # Park a connection that parses through this factory, so the
+            # materialisations it counts are the ones this factory parses.
+            _ = ServedConnection(request, self)
+        return self._inner.serve(request)
 
 
 @as_bundle("message_counter")

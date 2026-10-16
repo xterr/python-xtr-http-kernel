@@ -30,17 +30,19 @@ class RequestLifecycleMiddlewareFactory:
     application's factories are behind.
     """
 
-    __slots__ = ("_dispatcher", "_messages")
+    __slots__ = ("_dispatcher", "_message_factory")
 
     def __init__(
         self,
         dispatcher: EventDispatcherInterface,
-        messages: HttpMessageFactoryInterface,
+        message_factory: HttpMessageFactoryInterface,
     ) -> None:
-        """Hand ``dispatcher`` and ``messages`` to every middleware built."""
+        """Hand ``dispatcher`` and ``message_factory`` to every middleware built."""
         self._dispatcher = dispatcher
-        self._messages = messages
+        self._message_factory = message_factory
 
     def __call__(self, app: ASGIApp) -> ASGIApp:
         """Return ``app`` wrapped in the lifecycle middleware."""
-        return RequestLifecycleMiddleware(app, dispatcher=self._dispatcher, messages=self._messages)
+        return RequestLifecycleMiddleware(
+            app, dispatcher=self._dispatcher, message_factory=self._message_factory
+        )

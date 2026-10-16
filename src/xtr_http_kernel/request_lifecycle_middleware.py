@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Protocol, cast, final, runtime_checkable
 from starlette.datastructures import MutableHeaders
 from starlette.requests import Request
 
+from .bridge.served_connection import ServedConnection
 from .event import (
     ExceptionEvent,
     FinishRequestEvent,
@@ -20,9 +21,9 @@ if TYPE_CHECKING:
 
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
     from xtr_event_dispatcher_contracts import EventDispatcherInterface
+    from xtr_http_message import ServerRequest
 
     from .bridge.http_message_factory_interface import HttpMessageFactoryInterface
-    from .bridge.served_request import ServedRequest
 
 __all__ = ["RequestLifecycleMiddleware"]
 
@@ -54,7 +55,7 @@ class _Lifecycle:
     def __init__(
         self,
         dispatcher: EventDispatcherInterface,
-        request: ServedRequest,
+        request: ServerRequest,
         state: MutableMapping[str, object],
         send: Send,
     ) -> None:
@@ -66,7 +67,7 @@ class _Lifecycle:
         self._finished = False
 
     @property
-    def request(self) -> ServedRequest:
+    def request(self) -> ServerRequest:
         return self._request
 
     @property
@@ -122,7 +123,7 @@ class RequestLifecycleMiddleware:
     app.add_middleware(
         RequestLifecycleMiddleware,
         dispatcher=dispatcher,
-        messages=HttpMessageFactory(...),
+        message_factory=HttpMessageFactory(...),
     )
     ```
 
@@ -139,8 +140,8 @@ class RequestLifecycleMiddleware:
     propagates — and
     :class:`~xtr_http_kernel.event.terminate_event.TerminateEvent` last, with
     the status that was sent. Each event at most once per request, and every
-    one of them carries the request as a message — the served request, built
-    from the connection alone, its body read only if a listener asks to read
+    one of them carries the request as a message — the served request, born
+    connected to its connection, its body read only if a listener asks to read
     it — plus the per-request state bag the framework's own request wraps.
 
     A listener that does read the body drains the wire, so the application is
@@ -158,27 +159,27 @@ class RequestLifecycleMiddleware:
     overlapping requests each trace only their own events.
     """
 
-    __slots__ = ("_app", "_dispatcher", "_messages")
+    __slots__ = ("_app", "_dispatcher", "_message_factory")
 
     def __init__(
         self,
         app: ASGIApp,
         *,
         dispatcher: EventDispatcherInterface,
-        messages: HttpMessageFactoryInterface,
+        message_factory: HttpMessageFactoryInterface,
     ) -> None:
         """Wrap ``app``, announcing every request to ``dispatcher``'s listeners.
 
         Args:
             app: The application whose requests are announced.
             dispatcher: Where the lifecycle's events go.
-            messages: Builds each request's served request message — the
-                bridge's own factory when the container builds this, built by
+            message_factory: Builds each request's served request message —
+                the bridge's own factory when the container builds this, built by
                 hand when nothing does.
         """
         self._app = app
         self._dispatcher = dispatcher
-        self._messages = messages
+        self._message_factory = message_factory
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Carry one connection through, dispatching the lifecycle when it is a request."""
@@ -186,7 +187,11 @@ class RequestLifecycleMiddleware:
             await self._app(scope, receive, send)
             return
 
-        served = self._messages.serve(Request(scope, receive))
+        framework_request = Request(scope, receive)
+        # The connection the request is served over, parked on the scope, so
+        # the factory's serve builds the message over this very one.
+        connection = ServedConnection(framework_request, self._message_factory)
+        served = self._message_factory.serve(framework_request)
         # The same bag the framework's own request wraps, created here so a
         # listener and the framework write one state between them.
         state = cast("MutableMapping[str, object]", scope.setdefault("state", {}))
@@ -201,7 +206,7 @@ class RequestLifecycleMiddleware:
         if unit is not None:
             unit.begin_unit()
         try:
-            await self._handle(scope, receive, lifecycle)
+            await self._handle(scope, receive, lifecycle, connection)
         finally:
             try:
                 try:
@@ -214,9 +219,15 @@ class RequestLifecycleMiddleware:
             finally:
                 # A form a listener parsed through the served request is
                 # closed even when no scoped service ever asked for one.
-                await served.close()
+                await connection.close()
 
-    async def _handle(self, scope: Scope, receive: Receive, lifecycle: _Lifecycle) -> None:
+    async def _handle(
+        self,
+        scope: Scope,
+        receive: Receive,
+        lifecycle: _Lifecycle,
+        connection: ServedConnection,
+    ) -> None:
         request_event = RequestEvent(lifecycle.request, lifecycle.state)
         _ = await self._dispatcher.dispatch(request_event)
         answer = request_event.response
@@ -226,7 +237,7 @@ class RequestLifecycleMiddleware:
         # A listener that read the served request's body drained the wire, so
         # the application is handed the buffered bytes back; otherwise the
         # original channel passes through untouched.
-        app_receive = await lifecycle.request.replay(receive)
+        app_receive = await connection.replay(receive)
         try:
             await self._app(scope, app_receive, lifecycle.send)
         except BaseException as error:

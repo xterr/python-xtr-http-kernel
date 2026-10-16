@@ -123,7 +123,7 @@ async def test_a_success_dispatches_request_response_finish_and_terminate_in_ord
     middleware = RequestLifecycleMiddleware(
         _answering_app(b"hello"),
         dispatcher=_journalling_dispatcher(journal),
-        messages=_messages(),
+        message_factory=_messages(),
     )
 
     await middleware(_http_scope(), _receive, _journalling_send(journal))
@@ -143,7 +143,7 @@ async def test_finish_request_leaves_before_the_last_chunk_of_a_streamed_body() 
     middleware = RequestLifecycleMiddleware(
         _answering_app(b"one", b"two", b"three"),
         dispatcher=_journalling_dispatcher(journal),
-        messages=_messages(),
+        message_factory=_messages(),
     )
 
     await middleware(_http_scope(), _receive, _journalling_send(journal))
@@ -172,7 +172,7 @@ async def test_a_request_listener_answer_skips_the_application() -> None:
     async def app(_scope: Scope, _receive: Receive, _send: Send) -> None:
         journal.append("application ran")
 
-    middleware = RequestLifecycleMiddleware(app, dispatcher=dispatcher, messages=_messages())
+    middleware = RequestLifecycleMiddleware(app, dispatcher=dispatcher, message_factory=_messages())
 
     await middleware(_http_scope(), _receive, _journalling_send(journal))
 
@@ -202,7 +202,7 @@ async def test_a_response_listener_adjusts_the_status_and_headers_that_leave() -
         sent.append(message)
 
     middleware = RequestLifecycleMiddleware(
-        _answering_app(b"made"), dispatcher=dispatcher, messages=_messages()
+        _answering_app(b"made"), dispatcher=dispatcher, message_factory=_messages()
     )
 
     await middleware(_http_scope(), _receive, send)
@@ -219,7 +219,7 @@ async def test_an_unanswered_exception_is_announced_finished_and_re_raised() -> 
         raise RuntimeError("boom")
 
     middleware = RequestLifecycleMiddleware(
-        app, dispatcher=_journalling_dispatcher(journal), messages=_messages()
+        app, dispatcher=_journalling_dispatcher(journal), message_factory=_messages()
     )
 
     with pytest.raises(RuntimeError, match="boom"):
@@ -245,7 +245,7 @@ async def test_an_exception_listener_answer_leaves_instead_of_the_failure() -> N
     async def app(_scope: Scope, _receive: Receive, _send: Send) -> None:
         raise RuntimeError("boom")
 
-    middleware = RequestLifecycleMiddleware(app, dispatcher=dispatcher, messages=_messages())
+    middleware = RequestLifecycleMiddleware(app, dispatcher=dispatcher, message_factory=_messages())
 
     await middleware(_http_scope(), _receive, _journalling_send(journal))
 
@@ -272,7 +272,7 @@ async def test_a_listener_answer_does_not_swallow_a_cancellation() -> None:
     async def app(_scope: Scope, _receive: Receive, _send: Send) -> None:
         raise asyncio.CancelledError
 
-    middleware = RequestLifecycleMiddleware(app, dispatcher=dispatcher, messages=_messages())
+    middleware = RequestLifecycleMiddleware(app, dispatcher=dispatcher, message_factory=_messages())
 
     with pytest.raises(asyncio.CancelledError):
         await middleware(_http_scope(), _receive, _journalling_send(journal))
@@ -305,7 +305,7 @@ async def test_an_exception_after_the_response_started_ignores_a_listener_answer
         await send({"type": "http.response.body", "body": b"partial", "more_body": True})
         raise RuntimeError("mid-stream")
 
-    middleware = RequestLifecycleMiddleware(app, dispatcher=dispatcher, messages=_messages())
+    middleware = RequestLifecycleMiddleware(app, dispatcher=dispatcher, message_factory=_messages())
 
     with pytest.raises(RuntimeError, match="mid-stream"):
         await middleware(_http_scope(), _receive, _journalling_send(journal))
@@ -336,7 +336,7 @@ async def test_a_failure_after_the_whole_response_left_declares_finished_only_on
         raise RuntimeError("after the fact")
 
     middleware = RequestLifecycleMiddleware(
-        app, dispatcher=_journalling_dispatcher(journal), messages=_messages()
+        app, dispatcher=_journalling_dispatcher(journal), message_factory=_messages()
     )
 
     with pytest.raises(RuntimeError, match="after the fact"):
@@ -360,7 +360,7 @@ async def test_a_second_response_start_dispatches_no_second_response_event() -> 
         await send({"type": "http.response.body", "body": b"twice", "more_body": False})
 
     middleware = RequestLifecycleMiddleware(
-        app, dispatcher=_journalling_dispatcher(journal), messages=_messages()
+        app, dispatcher=_journalling_dispatcher(journal), message_factory=_messages()
     )
 
     await middleware(_http_scope(), _receive, _journalling_send(journal))
@@ -381,7 +381,7 @@ async def test_other_scopes_pass_through_untouched(scope_type: str) -> None:
         return None
 
     middleware = RequestLifecycleMiddleware(
-        app, dispatcher=_journalling_dispatcher(journal), messages=_messages()
+        app, dispatcher=_journalling_dispatcher(journal), message_factory=_messages()
     )
 
     await middleware(scope, _receive, send)
@@ -427,7 +427,7 @@ async def test_a_unit_scoped_dispatcher_frames_the_whole_request() -> None:
     middleware = RequestLifecycleMiddleware(
         _answering_app(b"traced"),
         dispatcher=_UnitScopedDispatcher(journal),
-        messages=_messages(),
+        message_factory=_messages(),
     )
 
     await middleware(_http_scope(), _receive, _journalling_send(journal))
@@ -442,7 +442,7 @@ async def test_unit_attributes_that_cannot_be_called_are_left_alone() -> None:
     middleware = RequestLifecycleMiddleware(
         _answering_app(b"plain"),
         dispatcher=_UnitAttributesAsData(journal),
-        messages=_messages(),
+        message_factory=_messages(),
     )
 
     await middleware(_http_scope(), _receive, _journalling_send(journal))

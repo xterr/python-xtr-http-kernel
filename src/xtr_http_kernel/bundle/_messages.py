@@ -41,7 +41,8 @@ from xtr_http_kernel.bridge import (
     StarletteHttpFactory,
     StarletteHttpFactoryInterface,
 )
-from xtr_http_kernel.bridge.served_request import served_request_of
+from xtr_http_kernel.bridge._media_types import has_parsed_side
+from xtr_http_kernel.bridge.served_connection import ServedConnection, served_connection_of
 from xtr_http_kernel.exception import UnsupportedConnectionError
 
 if TYPE_CHECKING:
@@ -105,14 +106,14 @@ def register(services: ServiceConfigurator) -> None:
 
 
 async def server_request(
-    messages: HttpMessageFactoryInterface,
+    message_factory: HttpMessageFactoryInterface,
 ) -> AsyncIterator[ServerRequestInterface]:
     """Hand out the request being served as a message, once for the request.
 
-    The message is the served request the lifecycle middleware parked on the
-    connection's scope — the very instance its events carried, so a service
-    and a listener hold one request between them. Without the lifecycle — a
-    bridge-only application — the served request is built here from the
+    The message is the one the connection parked on the request's scope
+    serves — the very instance its events carried, so a service and a
+    listener hold one request between them. Without the lifecycle — a
+    bridge-only application — the connection is built here from the
     framework's own request object, and parked in its turn.
 
     A body that has a parsed side — a form, JSON — is materialised before the
@@ -130,7 +131,7 @@ async def server_request(
     does.
 
     Args:
-        messages: What builds the served request out of the connection.
+        message_factory: What builds the served request out of the connection.
 
     Yields:
         The request, as a message.
@@ -139,30 +140,33 @@ async def server_request(
         UnsupportedConnectionError: When a socket is being served: a request
             message describes an HTTP request, and a socket is not one.
     """
-    connection = current_connection()
-    if not isinstance(connection, Request):
-        raise UnsupportedConnectionError(cast("str", connection.scope["type"]))
+    framework_request = current_connection()
+    if not isinstance(framework_request, Request):
+        raise UnsupportedConnectionError(cast("str", framework_request.scope["type"]))
 
-    served = served_request_of(connection.scope)
-    if served is None:
-        served = messages.serve(connection)
+    connection = served_connection_of(framework_request.scope)
+    if connection is None:
+        connection = ServedConnection(framework_request, message_factory)
+
+    served = message_factory.serve(framework_request)
     try:
-        await served.ensure_parsed()
+        if has_parsed_side(framework_request.headers.get("content-type", "")):
+            await served.ensure_parsed()
         yield served
     finally:
-        await served.close()
+        await connection.close()
 
 
-def response(responses: ResponseFactoryInterface) -> ResponseInterface:
+def response(response_factory: ResponseFactoryInterface) -> ResponseInterface:
     """Build the response a served request is answered with, once for the request.
 
     It is the bridge's own response, so an endpoint writes a status, a header
     or a body into it as a message and returns it with nothing in between.
 
     Args:
-        responses: What builds the response.
+        response_factory: What builds the response.
 
     Returns:
         The response, for the endpoint to fill in and return.
     """
-    return responses.create_response()
+    return response_factory.create_response()
