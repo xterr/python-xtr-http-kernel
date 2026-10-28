@@ -1,6 +1,6 @@
 [project]
 name = "xtr-http-kernel"
-version = "4.1.0"
+version = "5.0.0"
 description = "Requests turned into responses through events: a request lifecycle for FastAPI applications on the xtr kernel."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,16 +26,16 @@ dependencies = [
     "fastapi>=0.121.3",
     # Imported directly — requests, responses, middleware — not only through fastapi.
     "starlette>=0.40",
-    "xtr-dependency-injection>=4.0,<5",
-    "xtr-event-dispatcher>=4.0,<5",
-    "xtr-event-dispatcher-contracts>=4.0,<5",
+    "xtr-dependency-injection>=5.0,<6",
+    "xtr-event-dispatcher>=5.0,<6",
+    "xtr-event-dispatcher-contracts>=5.0,<6",
     # The bridge builds messages and is the one place a message meets a route,
     # so both the contract and the implementation of it are required: the
     # bundle registers the implementation's factories under the contract.
-    "xtr-http-message>=4.0,<5",
-    "xtr-http-message-contracts>=4.0,<5",
-    "xtr-logging-contracts>=4.0,<5",
-    "xtr-service-contracts>=4.0,<5",
+    "xtr-http-message>=5.0,<6",
+    "xtr-http-message-contracts>=5.0,<6",
+    "xtr-logging-contracts>=5.0,<6",
+    "xtr-service-contracts>=5.0,<6",
     "typing-extensions>=4.4",
     # A submitted form with files in it: the bridge asks the web framework for
     # the form behind every multipart body, and the framework refuses outright
@@ -61,10 +61,10 @@ dev = [
     "pytest-cov>=5",
     "anyio>=4.0",
     "ty>=0.0.83",
-    "xtr-logging>=4.0,<5",
-    "xtr-console>=4.0,<5",
-    "xtr-clock>=4.0,<5",
-    "xtr-rate-limiter>=4.0,<5",
+    "xtr-logging>=5.0,<6",
+    "xtr-console>=5.0,<6",
+    "xtr-clock>=5.0,<6",
+    "xtr-rate-limiter>=5.0,<6",
     # Requests are driven straight at the application through an ASGI
     # transport, so the suite never binds a socket.
     "httpx>=0.27",
