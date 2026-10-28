@@ -2,7 +2,7 @@
 
 A frozen dataclass buildable with no arguments; every field has a default. Import it from
 `xtr_http_kernel.bundle` and return it from a `@configure` function in
-`<app>/config/http_kernel.py`.
+`<app>/config/packages/http_kernel.py`.
 
 ```python
 from xtr_dependency_injection import configure

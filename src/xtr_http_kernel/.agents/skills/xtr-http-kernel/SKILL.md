@@ -335,25 +335,26 @@ tests serving one application must not run at the same time.
 ## Use in an application
 
 `uv run xtr-recipes recipes:sync` applies the recipe shipped with this package: it lists
-`HttpKernelBundle`. That is the steps below a recipe can do; the `setup(app, kernel)` step it
-prints for you to make.
+`HttpKernelBundle` and writes `<app>/config/packages/http_kernel.py` with the bundle's own
+defaults. That is the steps below a recipe can do; the `setup(app, kernel)` step it prints for you
+to make.
 
 1. **Install** `uv add xtr-http-kernel`. Installed beside it, xtr-logging adds the listeners that
    write to a log, xtr-console the router commands, xtr-rate-limiter the rate limits. None is
    needed to serve requests. The two message packages come with it, and so does the parser a
    submitted form with files in it is read with: building the request as a message asks the
    framework for the form behind every multipart body.
-2. **Activate** `HttpKernelBundle: {"all": True}` in `BUNDLES` in `<app>/bundles.py`, imported
+2. **Activate** `HttpKernelBundle: {"all": True}` in `BUNDLES` in `<app>/config/bundles.py`, imported
    from `xtr_http_kernel.bundle`, then call `setup(app, kernel)` where the application is built.
 3. **Brings along** the event dispatcher bundle always; the logging, console and rate limiter
    bundles whenever those packages are installed. Installing the package is what activates them,
    not listing.
-4. **Configure** nothing by default: a fresh `uuid4` id under
-   `X-Request-Id` per request (an inbound one is not trusted), no robots header, the `request`
-   log channel.
+4. **Configure** the recipe writes `<app>/config/packages/http_kernel.py` holding the lifecycle
+   defaults: a fresh `uuid4` id under `X-Request-Id` per request (an inbound one is not trusted),
+   no robots header, the `request` log channel.
 
    ```python
-   # <app>/config/http_kernel.py
+   # <app>/config/packages/http_kernel.py
    from xtr_dependency_injection import configure
 
    from xtr_http_kernel.bundle import HttpKernelConfig
@@ -372,8 +373,10 @@ prints for you to make.
 7. **Check** `debug:bundles` shows `http_kernel` as `listed` and `active`, `event_dispatcher` as
    `required`. With a console bundle, `debug:router` lists the routes in the order routing tries
    them, and `router:match PATH [--method GET]` names the route a path reaches.
-8. **Remove** drop the `setup(app, kernel)` call, drop the `BUNDLES` entry, delete
-   `<app>/config/http_kernel.py`, then `uv remove xtr-http-kernel`.
+8. **Remove** drop the `setup(app, kernel)` call, drop the `BUNDLES` entry;
+   `uv run xtr-recipes recipes:remove xtr-http-kernel` deletes
+   `<app>/config/packages/http_kernel.py`, unless you edited it, in which case it is moved aside
+   to `http_kernel.py.removed`. Then `uv remove xtr-http-kernel`.
 
 ## Errors
 

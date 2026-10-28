@@ -1,0 +1,27 @@
+"""The request lifecycle: request ids, the error log, and the application the commands read.
+
+```python
+HttpKernelConfig(app="${app}.web.app:app", disallow_search_indexing=True)
+```
+"""
+
+from __future__ import annotations
+
+from xtr_dependency_injection import configure
+from xtr_http_kernel.bundle import HttpKernelConfig
+
+__all__ = ["http_kernel"]
+
+
+@configure
+def http_kernel() -> HttpKernelConfig:
+    """A fresh request id per request, and uncaught errors written to the request channel."""
+    # Set app to the "package.module:app" the router commands load, so debug:router and
+    # router:match need no --app.
+    #
+    # Every response echoes the X-Request-Id header, unless request_id_header names another.
+    # trust_request_id keeps the id a caller sent: turn it on only behind a proxy you control.
+    #
+    # disallow_search_indexing marks every response noindex; log_channel names the channel
+    # uncaught errors are written to.
+    return HttpKernelConfig()

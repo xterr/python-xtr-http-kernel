@@ -454,10 +454,11 @@ removing it undoes.
   parser a submitted form with files in it is read with: building the request as a message
   asks the web framework for the form behind every multipart body, and the framework refuses
   outright where that parser is missing.
-- **Recipe** — `uv run xtr-recipes recipes:sync` does the *Activate* step below: it lists
-  `HttpKernelBundle`. There is no config file, environment or ignore line to write; it prints the
+- **Recipe** — `uv run xtr-recipes recipes:sync` does the *Activate* and *Configure* steps below:
+  it lists `HttpKernelBundle` and writes `<app>/config/packages/http_kernel.py` with the bundle's
+  own defaults. There is no environment or ignore line to write; it prints the
   `setup(app, kernel)` step, which a recipe cannot make for you.
-- **Activate** — `HttpKernelBundle: {"all": True}` in `BUNDLES` in `<app>/bundles.py`, imported
+- **Activate** — `HttpKernelBundle: {"all": True}` in `BUNDLES` in `<app>/config/bundles.py`, imported
   from `xtr_http_kernel.bundle`. Then call `setup(app, kernel)` where the application is built.
 - **Brings along** — the [event dispatcher](../xtr-event-dispatcher) bundle always, because the
   lifecycle dispatches through it; the [logging](../xtr-logging), [console](../xtr-console) and
@@ -466,16 +467,19 @@ removing it undoes.
   package is not installed. Listing is not what activates them; installing the package is. No
   bundle comes along for the messages: neither message package ships one, and this bundle
   registers their services itself.
-- **Configure** — nothing is required: the zero-config path gives every request a fresh `uuid4`
-  id under `X-Request-Id` — an inbound one is not trusted — no robots header, and the `request`
-  log channel, and makes the request and the response of a request askable as
-  [messages](#the-request-and-the-response-as-messages). A
-  `<app>/config/http_kernel.py` `@configure` function returning an `HttpKernelConfig` changes
-  that — see [Configure](#configure) and [Kernel / bundle](#kernel--bundle).
+- **Configure** — nothing is required: the recipe writes `<app>/config/packages/http_kernel.py`
+  holding the lifecycle defaults — every request a fresh `uuid4` id under `X-Request-Id`, an
+  inbound one is not trusted, no robots header, the `request` log channel, and the request and
+  the response of a request askable as
+  [messages](#the-request-and-the-response-as-messages). Changing what that `@configure`
+  function returns changes that — see [Configure](#configure) and
+  [Kernel / bundle](#kernel--bundle).
 - **Environment** — nothing.
 - **Ignore** — nothing.
-- **Remove** — drop the `setup(app, kernel)` call, drop the `BUNDLES` entry, delete
-  `<app>/config/http_kernel.py` if you wrote one, then `uv remove xtr-http-kernel`.
+- **Remove** — drop the `setup(app, kernel)` call, drop the `BUNDLES` entry;
+  `uv run xtr-recipes recipes:remove xtr-http-kernel` deletes
+  `<app>/config/packages/http_kernel.py`, unless you edited it, in which case it is moved aside
+  to `http_kernel.py.removed`. Then `uv remove xtr-http-kernel`.
 - **Check** — `debug:bundles` shows `http_kernel` as `listed` and `active`, `event_dispatcher`
   as `required`, and (when those packages are installed) `logging` and `console` as `required`;
   `debug:router` lists the application's routes.
@@ -514,17 +518,17 @@ config resolves after logging's, so it cannot declare a name it does not yet kno
 ## Kernel / bundle
 
 An application using [xtr-dependency-injection](../xtr-dependency-injection) lists
-`HttpKernelBundle` in its `app/bundles.py`:
+`HttpKernelBundle` in its `app/config/bundles.py`:
 
 ```python
-# app/bundles.py
+# app/config/bundles.py
 from xtr_http_kernel.bundle import HttpKernelBundle
 
 BUNDLES = {HttpKernelBundle: {"all": True}}
 ```
 
 ```python
-# app/config/http_kernel.py
+# app/config/packages/http_kernel.py
 from xtr_dependency_injection import configure
 
 from xtr_http_kernel.bundle import HttpKernelConfig

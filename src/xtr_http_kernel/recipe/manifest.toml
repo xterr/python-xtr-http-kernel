@@ -5,11 +5,13 @@
 # "<module>:<class>" = the environments it is listed with, exactly as in BUNDLES.
 "xtr_http_kernel.bundle:HttpKernelBundle" = { all = true }
 
-# No [files]: nothing is required. With no configuration a request gets a uuid4
-# id under X-Request-Id, no robots header, and the "request" log channel; an
-# application changing any of that writes config/http_kernel.py itself. A
-# bundle's recipe writing a routes file under config/routes/ gets that package
-# created by xtr-recipes itself.
+[files]
+# Destination under the application package = template under this recipe.
+# The bundle's own defaults written out — a uuid4 id under X-Request-Id, no
+# robots header, the "request" log channel — as the place to change them and to
+# name the application the router commands read. A bundle's recipe writing a
+# routes file under config/routes/ gets that package created by xtr-recipes.
+"config/packages/http_kernel.py" = "files/config/http_kernel.py.tmpl"
 
 # No [env], and nothing to ignore.
 
