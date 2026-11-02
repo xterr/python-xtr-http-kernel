@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+import json
+from typing import TYPE_CHECKING, NoReturn, cast
 from urllib.parse import unquote
 
 import pytest
@@ -243,6 +244,32 @@ async def test_a_json_body_is_the_parsed_body_only_where_it_describes_an_object(
     )
 
     assert message.get_parsed_body() == parsed
+
+
+async def test_a_json_body_nested_deeper_than_the_parser_reads_is_no_parsed_body(
+    factory: HttpMessageFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The parser gives up on deep nesting with a RecursionError.
+
+    How deep that is depends on the runtime — on 3.14, on the stack the process
+    was given — so no body is deep enough everywhere; the parser is made to
+    give up instead.
+    """
+
+    def gives_up(*_args: object, **_kwargs: object) -> NoReturn:
+        raise RecursionError
+
+    monkeypatch.setattr(json, "loads", gives_up)
+    message = await factory.create_request(
+        asgi_request(
+            method="POST",
+            headers=[(b"host", b"a.test"), (b"content-type", b"application/json")],
+            body=b'{"a": {"a": 1}}',
+        )
+    )
+
+    assert message.get_parsed_body() is None
 
 
 async def test_a_submitted_form_is_the_parsed_body_as_the_framework_parsed_it(

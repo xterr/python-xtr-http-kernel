@@ -303,7 +303,7 @@ class HttpMessageFactory(HttpMessageFactoryInterface):
 
         try:
             parsed = cast("object", await request.json())
-        except ValueError:
+        except (ValueError, RecursionError):  # nested too deep to parse is not JSON either
             return None
 
         return cast("Mapping[str, object]", parsed) if isinstance(parsed, dict) else None
