@@ -1,17 +1,10 @@
-"""The one seam that reads an application's routes, on either framework shape.
-
-Releases that offer the effective view of every route are asked for it; the
-rest hand their routes over already effective. Both paths are exercised here
-against the installed release, the older one by taking the newer one's entry
-point away.
-"""
+"""The one seam that reads an application's routes, every prefix applied."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest
-from fastapi import routing as fastapi_routing
+from fastapi import APIRouter, FastAPI, WebSocket
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 from starlette.routing import BaseRoute, Host, Match, Mount, Route, Router, WebSocketRoute
@@ -35,12 +28,6 @@ ROUTES: list[BaseRoute] = [
     BaseRoute(),
 ]
 """One route of every kind the framework can hand over, effective as they are."""
-
-
-@pytest.fixture
-def without_the_effective_view(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Take away the entry point the newer releases offer."""
-    monkeypatch.delattr(fastapi_routing, "iter_route_contexts", raising=False)
 
 
 def _scope(path: str, method: str = "GET") -> Scope:
@@ -113,23 +100,25 @@ def test_a_full_match_reads_the_path_parameters_out() -> None:
     assert child_scope["path_params"] == {"isbn": "123"}
 
 
-@pytest.mark.usefixtures("without_the_effective_view")
-def test_without_the_effective_view_the_routes_are_read_as_they_come() -> None:
-    read = route_contexts(ROUTES)
+def test_the_routes_of_an_included_router_are_read_at_their_prefixed_paths() -> None:
+    router = APIRouter()
 
-    assert [(view.path, view.name, view.methods) for view in read] == [
-        ("/books/{isbn}", "endpoint", {"GET", "HEAD"}),
-        ("/live", "live", None),
-        ("/inner", "inner", None),
-        (None, "host", None),
-        (None, None, None),
+    @router.get("/items", name="items")
+    async def items() -> None: ...
+
+    @router.websocket("/live", name="live")
+    async def live(websocket: WebSocket) -> None:
+        del websocket
+
+    app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
+    app.include_router(router, prefix="/v1")
+
+    read = route_contexts(app.router.routes)
+
+    # A socket as well as a method route: the framework's effective view left
+    # an included socket without its path before the release this package
+    # requires.
+    assert [(view.path, view.name) for view in read] == [
+        ("/v1/items", "items"),
+        ("/v1/live", "live"),
     ]
-
-
-@pytest.mark.usefixtures("without_the_effective_view")
-def test_without_the_effective_view_a_route_still_answers_a_request() -> None:
-    view = route_contexts(ROUTES)[0]
-
-    assert view.matches(_scope("/books/123"))[0] is Match.FULL
-    assert view.matches(_scope("/books/123", "DELETE"))[0] is Match.PARTIAL
-    assert view.matches(_scope("/nope"))[0] is Match.NONE

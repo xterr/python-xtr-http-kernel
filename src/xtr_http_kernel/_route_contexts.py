@@ -1,15 +1,9 @@
-"""One view of an application's routes, whichever way the framework hands them over.
+"""One view of an application's routes, every prefix applied.
 
-Newer releases keep a router included under a prefix as a wrapper around that
-router rather than as the routes it holds, and offer the effective view of
-every route — prefixes applied — through ``iter_route_contexts``. Older ones
-put each route in the list directly, already effective. This module is the
-only place that difference lives.
-
-A release that grew the wrapper before it grew the view of one lists an
-included router as the single opaque route the application holds: there is no
-supported way in, so the row names the wrapper for what it is rather than
-inventing a path for it.
+The framework keeps a router included under a prefix as a wrapper around that
+router rather than as the routes it holds, and offers the effective view of
+every route — prefixes applied — through ``iter_route_contexts``. This module
+is the only place that reads it.
 """
 
 from __future__ import annotations
@@ -17,11 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, cast, final
 
-from fastapi import routing as fastapi_routing
-from starlette.routing import Host, Mount, Route, WebSocketRoute
+from fastapi.routing import iter_route_contexts
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Sequence
 
     from fastapi.routing import RouteContext
     from starlette.routing import BaseRoute, Match
@@ -53,7 +46,7 @@ class RouteView:
         endpoint: What it hands the request to, ``None`` when it hands it to
             another application instead.
         matcher: What answers :meth:`matches` — the framework's own view of
-            the route, or the route itself.
+            the route.
     """
 
     route: BaseRoute
@@ -74,18 +67,8 @@ class RouteView:
 
 
 def route_contexts(routes: Sequence[BaseRoute]) -> Sequence[RouteView]:
-    """Read every route of an application, prefixes applied.
-
-    A release offering the effective view of each route is asked for it; the
-    rest hand their routes over already effective.
-    """
-    effective = cast(
-        "Callable[[Sequence[BaseRoute]], Iterable[RouteContext]] | None",
-        getattr(fastapi_routing, "iter_route_contexts", None),
-    )
-    if effective is None:
-        return [_of_route(route) for route in routes]
-    return [_of_context(context) for context in effective(routes)]
+    """Read every route of an application, prefixes applied."""
+    return [_of_context(context) for context in iter_route_contexts(routes)]
 
 
 def _of_context(context: RouteContext) -> RouteView:
@@ -98,16 +81,3 @@ def _of_context(context: RouteContext) -> RouteView:
         endpoint=context.endpoint,
         matcher=context,
     )
-
-
-def _of_route(route: BaseRoute) -> RouteView:
-    """Read a route a release hands over already effective.
-
-    Each line below names the kinds of route that can answer that much; a kind
-    that answers none of it is left to be named by itself.
-    """
-    methods = route.methods if isinstance(route, Route) else None
-    endpoint = route.endpoint if isinstance(route, (Route, WebSocketRoute)) else None
-    path = route.path if isinstance(route, (Mount, Route, WebSocketRoute)) else None
-    name = route.name if isinstance(route, (Host, Mount, Route, WebSocketRoute)) else None
-    return RouteView(route, path, name, methods, endpoint, route)

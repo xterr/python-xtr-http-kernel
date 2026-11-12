@@ -23,9 +23,16 @@ classifiers = [
 # takes the container layer and the web framework outright rather than behind
 # an extra: there is nothing left of it once either is gone.
 dependencies = [
-    "fastapi>=0.121.3",
-    # Imported directly — requests, responses, middleware — not only through fastapi.
-    "starlette>=0.40",
+    # 0.143.1 is the first release whose effective view of an application's routes
+    # gives an included WebSocket route its prefixed path; the router listing and
+    # the route conflict check read that view.
+    "fastapi>=0.143.1",
+    # Imported directly — requests, responses, middleware — not only through fastapi,
+    # which asks for far less than this package needs. The bridge's response
+    # builds on the 1.x response, and 1.3.1 is the first release that enforces
+    # the limits of a urlencoded form, which every request read as a message
+    # goes through (GHSA-82w8-qh3p-5jfq).
+    "starlette>=1.3.1",
     "xtr-dependency-injection>=6.0,<7",
     "xtr-event-dispatcher>=6.0,<7",
     "xtr-event-dispatcher-contracts>=6.0,<7",
