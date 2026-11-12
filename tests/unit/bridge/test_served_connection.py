@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from starlette.datastructures import FormData, UploadFile
 from starlette.requests import Request
-from xtr_dependency_injection.exception import FastapiIntegrationError
 from xtr_http_message import HttpFactory, ServerRequest
 
 from tests.support.asgi_requests import asgi_request, asgi_scope
@@ -19,7 +18,7 @@ from xtr_http_kernel.bridge.served_connection import (
 )
 
 if TYPE_CHECKING:
-    from starlette.types import Message
+    from starlette.types import Message, Scope
     from xtr_http_message_contracts import UploadedFileInterface
 
 pytestmark = pytest.mark.anyio
@@ -185,7 +184,7 @@ async def test_a_body_nobody_read_leaves_nothing_to_close() -> None:
     assert served.get_parsed_body() is None
 
 
-async def test_the_serving_request_is_preferred_when_one_is_being_served(
+async def test_the_request_the_framework_serves_this_connection_from_is_preferred(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     framework_reads: list[Message] = []
@@ -194,9 +193,13 @@ async def test_the_serving_request_is_preferred_when_one_is_being_served(
         framework_reads.append({"type": "http.request", "body": b"cached", "more_body": False})
         return framework_reads[-1]
 
-    framework = Request(asgi_scope("POST", path="/routed"), framework_receive)
-    served, _request = _served(b"own")
-    monkeypatch.setattr(served_connection, "current_connection", lambda: framework)
+    served, request = _served(b"own")
+    framework = Request(request.scope, framework_receive)
+
+    def published(scope: Scope) -> Request | None:
+        return framework if scope is request.scope else None
+
+    monkeypatch.setattr(served_connection, "connection_of", published)
 
     # The read goes through the framework's own request — its channel, not
     # the served request's.
@@ -204,16 +207,30 @@ async def test_the_serving_request_is_preferred_when_one_is_being_served(
     assert framework_reads
 
 
-async def test_the_own_request_is_read_before_anything_routes(
+async def test_a_request_published_on_another_connection_is_not_read_through(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    other_reads: list[Message] = []
 
+    async def other_receive() -> Message:
+        other_reads.append({"type": "http.request", "body": b"another", "more_body": False})
+        return other_reads[-1]
+
+    other = Request(asgi_scope("POST", path="/another"), other_receive)
     served, _request = _served(b"own")
-    monkeypatch.setattr(
-        served_connection,
-        "current_connection",
-        lambda: (_ for _ in ()).throw(FastapiIntegrationError("no")),
-    )
 
-    # No connection is being served, so this message's own request reads.
+    def published(scope: Scope) -> Request | None:
+        return other if scope is other.scope else None
+
+    monkeypatch.setattr(served_connection, "connection_of", published)
+
+    # Whatever is being served elsewhere, this connection reads its own wire.
+    assert await served.get_body().get_contents() == b"own"
+    assert other_reads == []
+
+
+async def test_the_own_request_is_read_before_anything_routes() -> None:
+    served, _request = _served(b"own")
+
+    # Nothing is published on this connection yet, so its own request reads.
     assert await served.get_body().get_contents() == b"own"

@@ -88,8 +88,18 @@ setup(app, kernel)
 Serve it with any ASGI server:
 
 ```sh
-uv run --with uvicorn uvicorn --app-dir . app:app
+uv run --with 'uvicorn>=0.45' uvicorn --reset-contextvars --app-dir . app:app
 ```
+
+`--reset-contextvars` starts each request in a context of its own. A server gives no promise
+about the context a request's task starts with: on a kept-alive connection it can be a copy of
+an earlier request's, taken while that request was being served. What this package keeps per
+request — the scope its services live in, the request a service is handed — is found on the
+request's own connection and is its own either way. A context variable the application sets,
+or one a library it uses sets, has no such anchor: only the server can keep it from reaching
+the next request, and the flag is how it is asked to. With it on, a context variable set
+before the server started is not seen by a request; pass such a value through the
+application's state.
 
 ```console
 $ curl -i localhost:8000/books/0262510871

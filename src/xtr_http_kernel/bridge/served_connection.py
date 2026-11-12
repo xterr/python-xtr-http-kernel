@@ -20,11 +20,10 @@ from starlette.datastructures import FormData
 from starlette.requests import Request
 from typing_extensions import override
 
-# Read at runtime: materialisation prefers the framework's own connection,
-# whose caches spare a second reading of the wire, and the refusal when no
-# request is being served is what tells this connection to read its own.
-from xtr_dependency_injection.exception import FastapiIntegrationError
-from xtr_dependency_injection.integration.fastapi import current_connection
+# Read at runtime: materialisation prefers the framework's own request,
+# whose caches spare a second reading of the wire, and looks for it on this
+# connection's own scope.
+from xtr_dependency_injection.integration.fastapi import connection_of
 from xtr_http_message import RequestSource, ServerRequest
 
 if TYPE_CHECKING:
@@ -257,12 +256,15 @@ class ServedConnection(RequestSource):
         request object, so reading through that one shares those caches;
         before routing there is none, and this connection's own request
         reads the wire.
+
+        The framework's request is looked for on this connection's own
+        scope, never in the calling context: a context may carry another
+        request's — a server can start a request's task from an earlier
+        one's — and reading through that one would hand this request a
+        body and a form that are not its own.
         """
-        try:
-            connection = current_connection()
-        except FastapiIntegrationError:
-            return self._request
-        return connection if isinstance(connection, Request) else self._request
+        published = connection_of(self._request.scope)
+        return published if isinstance(published, Request) else self._request
 
     async def _raw_body(self, request: Request) -> bytes:
         """Return the raw body of ``request``, empty where a form already took the wire.

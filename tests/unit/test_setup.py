@@ -92,12 +92,13 @@ async def test_the_first_life_boots_the_kernel_setup_built_and_later_ones_build_
 async def test_the_kernel_serves_the_application_only_while_it_lives() -> None:
     app = FastAPI()
     setup(app, _kernel())
+    connection_scope: Scope = {"type": "http", "app": app}
 
-    async with app.router.lifespan_context(app), request_scope(app):
+    async with app.router.lifespan_context(app), request_scope(app, connection_scope):
         pass
 
     with pytest.raises(FastapiIntegrationError, match="no kernel serves this application"):
-        async with request_scope(app):
+        async with request_scope(app, connection_scope):
             pytest.fail("the scope must not open once the application life ended")
 
 
@@ -113,10 +114,10 @@ async def test_pending_overrides_apply_at_the_next_build() -> None:
             return f"faked {name}"
 
     with override_services(app, {Greeter: Fake()}):
-        async with app.router.lifespan_context(app), request_scope(app):
+        async with app.router.lifespan_context(app), request_scope(app, connection.scope):
             overridden = await resolve(connection)
 
-    async with app.router.lifespan_context(app), request_scope(app):
+    async with app.router.lifespan_context(app), request_scope(app, connection.scope):
         real = await resolve(connection)
 
     assert isinstance(overridden, Fake)

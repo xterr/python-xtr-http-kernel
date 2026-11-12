@@ -28,13 +28,16 @@ _STACK_KEY = "_xtr_http_kernel_middleware"
 
 
 class ScopeJournal:
-    """A scope opener journalling every enter and exit."""
+    """A scope opener journalling every enter and exit, and what it was opened on."""
 
     def __init__(self) -> None:
         self.entries: list[str] = []
+        self.opened_on: list[tuple[object, object]] = []
 
-    def __call__(self, application: object) -> AbstractAsyncContextManager[None]:
-        del application
+    def __call__(
+        self, application: object, connection_scope: object
+    ) -> AbstractAsyncContextManager[None]:
+        self.opened_on.append((application, connection_scope))
         return self._open()
 
     @asynccontextmanager
@@ -78,6 +81,19 @@ async def test_a_request_runs_inside_the_scope(kind: str) -> None:
     await middleware(_scope(kind, FastAPI()), _receive, _send)
 
     assert opener.entries == ["scope opened", "downstream", "scope closed"]
+
+
+async def test_the_scope_is_opened_on_the_application_and_the_connection_being_served() -> None:
+    opener = ScopeJournal()
+    middleware = _kernel_middleware(_downstream(opener.entries), opener)
+    application = FastAPI()
+    scope = _scope("http", application)
+
+    await middleware(scope, _receive, _send)
+
+    [(opened_for, opened_on)] = opener.opened_on
+    assert opened_for is application
+    assert opened_on is scope
 
 
 async def test_the_lifespan_passes_through_without_a_scope() -> None:

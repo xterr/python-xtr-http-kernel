@@ -4,7 +4,9 @@ Plain ASGI on purpose — no base class dispatch, no response buffering — so
 the scope opens before anything downstream runs and closes only when the
 downstream returned, which is after the response's last chunk left. The
 scope opener arrives through the constructor rather than an import, so this
-module stays free of the container layer.
+module stays free of the container layer. It is handed the connection as
+well as the application: a request's scope is opened on its own connection,
+which is the one thing a server hands a request that is no other request's.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ if TYPE_CHECKING:
 
     from .middleware_stack import MiddlewareStack
 
-    ScopeOpener = Callable[[Starlette], AbstractAsyncContextManager[None]]
+    ScopeOpener = Callable[[Starlette, Scope], AbstractAsyncContextManager[None]]
 
 __all__ = ["KernelMiddleware"]
 
@@ -39,6 +41,11 @@ class KernelMiddleware:
     scoped service lives until the response has been sent. The scope closes
     on every path, a failing downstream included; the failure still
     propagates. The ``lifespan`` connection passes through untouched.
+
+    Every connection opens a scope of its own, on the connection itself. A
+    server may start a request's task from the context of an earlier request
+    on the same socket, so nothing is taken from what the context carries:
+    what the request is resolved against is what was opened here, for it.
     """
 
     __slots__ = ("_app", "_chain", "_open_scope", "_stack")
@@ -57,7 +64,7 @@ class KernelMiddleware:
             return
         application = cast("Starlette", scope["app"])
         chain = self._composed(application)
-        async with self._open_scope(application):
+        async with self._open_scope(application, scope):
             await chain(scope, receive, send)
 
     def _composed(self, application: Starlette) -> ASGIApp:

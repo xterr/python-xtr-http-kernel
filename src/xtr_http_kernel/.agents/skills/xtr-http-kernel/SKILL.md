@@ -59,9 +59,15 @@ the environment are read at that moment. Then it wraps two seams:
   afresh. Each applies test overrides, boots, attaches the container so the route markers
   resolve, runs the app's own lifespan inside, then detaches and shuts down.
 - **One middleware.** Fetches the kernel's `MiddlewareStack` once per life and runs every
-  request through it, inside the request scope scoped services live in.
+  request through it, inside the request scope scoped services live in. The scope is opened on
+  the request's own connection, so a request never reads another's — whatever context the
+  server started its task from.
 
-Serve it with any ASGI server: `uvicorn app.web:app`.
+Serve it with any ASGI server: `uvicorn --reset-contextvars app.web:app` (uvicorn 0.45 or
+later). The flag starts each request in a context of its own; without it a request on a
+kept-alive connection can start with the context variables an earlier one set. The kernel's own
+per-request state is safe either way; the application's, and that of the libraries it uses, is
+only safe with it.
 
 ## Routes
 
@@ -412,8 +418,8 @@ The routing errors import from `xtr_http_kernel.routing`, under `RoutingError` (
   endpoints' `Injected[...]` parameters.
 - Do not use `Depends` to reach a container service. Use `Injected[T]` or `Target("name")`, so
   the service stays out of the OpenAPI schema.
-- Do not call `attach`, `detach`, `request_scope`, `provider` or `current_connection` from
-  `xtr_dependency_injection.integration.fastapi`. They are what `setup` is built on; an
+- Do not call `attach`, `detach`, `request_scope`, `provider`, `current_connection` or
+  `connection_of` from `xtr_dependency_injection.integration.fastapi`. They are what `setup` is built on; an
   application calls `setup` and nothing lower. To reach the request being served, take the
   framework's own `request: Request` in a route, or `Injected[ServerRequestInterface]` in a
   route — a plain `ServerRequestInterface` parameter in a service — for the request as a
