@@ -7,6 +7,11 @@ down its own kernel, and adds one middleware so every request runs inside
 the scope its scoped services live in. Call it after the application's own
 routes and before the first request. An application that already started refuses new
 middleware; the framework's own error surfaces then.
+
+Every ``http`` and ``websocket`` connection is served — from the outermost
+layer of the application's middleware, the framework's error handling
+included — in a context detached from any earlier request's work, whatever
+context the server started its task in.
 """
 
 from __future__ import annotations
@@ -18,6 +23,7 @@ from typing import TYPE_CHECKING, cast
 from xtr_dependency_injection.integration.fastapi import attach, detach, request_scope
 from xtr_dependency_injection.testing import apply_overrides
 
+from ._detached import DetachedConnections
 from ._kernel_middleware import KernelMiddleware
 from ._staging import mount_routes
 from ._state import OVERRIDES_KEY, STACK_KEY
@@ -28,7 +34,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Hashable, Mapping
 
     from fastapi import FastAPI
-    from starlette.types import Lifespan
+    from starlette.types import ASGIApp, Lifespan
     from xtr_dependency_injection import Kernel
     from xtr_dependency_injection.kernel.compiled_kernel import CompiledKernel
 
@@ -81,6 +87,23 @@ def setup(app: FastAPI, kernel: Kernel) -> None:
     builds = _Builds(kernel, [first])
     app.router.lifespan_context = _serving_lifespan(app, builds, app.router.lifespan_context)
     app.add_middleware(KernelMiddleware, open_scope=request_scope)
+    _detach_connections(app)
+
+
+def _detach_connections(app: FastAPI) -> None:
+    """Have the middleware stack ``app`` builds serve each request connection detached.
+
+    The stack is built on the first connection, from every middleware added
+    by then — before or after this call — so wrapping what it builds puts the
+    detaching outermost, around the framework's error handling too.
+    """
+    build = app.build_middleware_stack
+
+    def detached_stack() -> ASGIApp:
+        return DetachedConnections(build())
+
+    # Set on the instance, shadowing the method for this application alone.
+    vars(app)["build_middleware_stack"] = detached_stack
 
 
 def _mount(app: FastAPI, compiled: CompiledKernel) -> None:

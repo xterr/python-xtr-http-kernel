@@ -2,12 +2,8 @@
 
 Each contributes one of the things every application wants around an
 endpoint: a request id, an uncaught exception in the log, a header keeping a
-page out of a search index, a unit of work per request. The bundle registers
-them; outside a container each is an ordinary object to register by hand.
-
-:class:`~xtr_http_kernel.event_listener.log_unit_listener.LogUnitListener`
-is not re-exported here: it needs xtr-logging, which is optional, so it is
-imported from its own module by whoever knows xtr-logging is installed.
+page out of a search index. The bundle registers them; outside a container
+each is an ordinary object to register by hand.
 """
 
 from __future__ import annotations

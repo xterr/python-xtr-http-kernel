@@ -26,6 +26,11 @@ from typing_extensions import override
 from xtr_dependency_injection.integration.fastapi import connection_of
 from xtr_http_message import RequestSource, ServerRequest
 
+from ._media_types import media_type_of
+
+_MULTIPART: Final = "multipart/form-data"
+"""The form encoding an upload travels in, parsed into spooled files rather than read whole."""
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -172,7 +177,14 @@ class ServedConnection(RequestSource):
         body = self._body
         if body is None:
             request = self._serving()
-            body = await self._raw_body(request)
+            # An upload read through the framework's request is parsed straight off the
+            # wire, into spooled files: reading it raw first would hold it whole. Before
+            # routing the raw read stays — the application is handed those bytes back.
+            parse_only = (
+                request is not self._request
+                and media_type_of(request.headers.get("content-type", "")) == _MULTIPART
+            )
+            body = b"" if parse_only else await self._raw_body(request)
             parsed = await self._message_factory.create_request(request)
             self._parsed = parsed.get_parsed_body()
             self._files = parsed.get_uploaded_files()

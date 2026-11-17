@@ -87,6 +87,26 @@ def test_a_connection_naming_no_address_at_all_leaves_the_uri_without_one() -> N
     assert _uri(server=None) == "http:/books"
 
 
+@pytest.mark.parametrize(
+    "header",
+    [
+        pytest.param(b"a b", id="space"),
+        pytest.param(b"x/y", id="slash"),
+        pytest.param(b"[::1", id="unclosed-bracket"),
+        pytest.param(b"%zz", id="bad-escape"),
+        pytest.param(b"a@b", id="user-info"),
+        pytest.param(b"\xff", id="non-ascii"),
+        pytest.param(b"evil.test, other.test", id="two-hosts"),
+    ],
+)
+def test_a_host_header_the_uri_refuses_leaves_the_listening_address_to_say(header: bytes) -> None:
+    assert _uri(headers=[(b"host", header)]) == "http://bookshop.test/books"
+
+
+def test_a_listening_address_the_uri_refuses_leaves_the_uri_without_an_authority() -> None:
+    assert _uri(server=("fe80::1%eth0", 80)) == "http:/books"
+
+
 def test_the_whole_target_path_is_the_path_of_the_uri() -> None:
     assert _uri(path="/mounted/books", root_path="/mounted") == "http://bookshop.test/mounted/books"
 

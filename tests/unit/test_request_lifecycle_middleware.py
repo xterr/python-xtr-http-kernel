@@ -11,11 +11,13 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, TypeVar, cast, final
 
+import anyio
 import pytest
 from starlette.responses import PlainTextResponse
 from xtr_event_dispatcher import EventDispatcher
 from xtr_http_message import HttpFactory
 
+import xtr_http_kernel.request_lifecycle_middleware as lifecycle_module
 from xtr_http_kernel import (
     ExceptionEvent,
     FinishRequestEvent,
@@ -449,4 +451,164 @@ async def test_unit_attributes_that_cannot_be_called_are_left_alone() -> None:
 
     assert "begin_unit" not in journal
     assert journal[0] == "request"
+    assert journal[-1] == "terminate:200"
+
+
+# ── every request finishes, its response event once, its cleanup whatever cancels it ──
+
+
+async def test_a_pathsend_response_finishes_before_it_leaves() -> None:
+    journal: list[str] = []
+
+    async def app(_scope: Scope, _receive: Receive, send: Send) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.pathsend", "path": "/srv/books.csv"})
+
+    middleware = RequestLifecycleMiddleware(
+        app, dispatcher=_journalling_dispatcher(journal), message_factory=_messages()
+    )
+
+    await middleware(_http_scope(), _receive, _journalling_send(journal))
+
+    assert journal == [
+        "request",
+        "response:200",
+        "sent:start:200",
+        "finish_request",
+        "sent:http.response.pathsend",
+        "terminate:200",
+    ]
+
+
+async def test_a_stream_cut_by_a_disconnect_still_finishes() -> None:
+    journal: list[str] = []
+
+    async def app(_scope: Scope, _receive: Receive, send: Send) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"part", "more_body": True})
+        # The client went away: the response returns without its last chunk.
+
+    middleware = RequestLifecycleMiddleware(
+        app, dispatcher=_journalling_dispatcher(journal), message_factory=_messages()
+    )
+
+    await middleware(_http_scope(), _receive, _journalling_send(journal))
+
+    assert journal[-2:] == ["finish_request", "terminate:200"]
+
+
+async def test_a_raising_request_listener_still_finishes() -> None:
+    journal: list[str] = []
+    dispatcher = _journalling_dispatcher(journal)
+
+    async def broken(_event: RequestEvent) -> None:
+        raise RuntimeError("listener")
+
+    dispatcher.add_listener(RequestEvent, broken)
+    middleware = RequestLifecycleMiddleware(
+        _answering_app(b"never"), dispatcher=dispatcher, message_factory=_messages()
+    )
+
+    with pytest.raises(RuntimeError, match="listener"):
+        await middleware(_http_scope(), _receive, _journalling_send(journal))
+
+    assert journal[-2:] == ["finish_request", "terminate:500"]
+
+
+async def test_a_raising_response_listener_dispatches_one_response_event() -> None:
+    journal: list[str] = []
+    dispatcher = _journalling_dispatcher(journal)
+    raised: list[bool] = []
+
+    async def broken_once(_event: ResponseEvent) -> None:
+        if not raised:
+            raised.append(True)
+            raise RuntimeError("listener")
+
+    async def answer(event: ExceptionEvent) -> None:
+        event.set_response(PlainTextResponse("mended", status_code=503))
+
+    dispatcher.add_listener(ResponseEvent, broken_once, priority=100)
+    dispatcher.add_listener(ExceptionEvent, answer, priority=-100)
+    middleware = RequestLifecycleMiddleware(
+        _answering_app(b"never"), dispatcher=dispatcher, message_factory=_messages()
+    )
+
+    await middleware(_http_scope(), _receive, _journalling_send(journal))
+
+    assert raised == [True]
+    assert [entry for entry in journal if entry.startswith("response:")] == []
+    assert journal[-4:] == ["sent:start:503", "finish_request", "sent:body:mended", "terminate:503"]
+
+
+async def test_a_cancelled_request_lets_its_finish_and_terminate_listeners_complete() -> None:
+    journal: list[str] = []
+    dispatcher = _journalling_dispatcher(journal)
+
+    async def slow_terminate(_event: TerminateEvent) -> None:
+        await asyncio.sleep(0.1)
+        journal.append("terminate:done")
+
+    dispatcher.add_listener(TerminateEvent, slow_terminate, priority=-100)
+
+    async def app(_scope: Scope, _receive: Receive, _send: Send) -> None:
+        _ = await asyncio.Event().wait()
+
+    middleware = RequestLifecycleMiddleware(app, dispatcher=dispatcher, message_factory=_messages())
+
+    with anyio.move_on_after(0.05):
+        await middleware(_http_scope(), _receive, _journalling_send(journal))
+
+    assert journal[-3:] == ["finish_request", "terminate:500", "terminate:done"]
+
+
+async def test_a_cancellation_during_the_finish_listener_on_the_send_path_still_completes_it() -> (
+    None
+):
+    journal: list[str] = []
+    dispatcher = _journalling_dispatcher(journal)
+    gate = asyncio.Event()
+    waiting = asyncio.Event()
+
+    async def gated_finish(_event: FinishRequestEvent) -> None:
+        journal.append("finish:waiting")
+        waiting.set()
+        _ = await gate.wait()
+        journal.append("finish:done")
+
+    dispatcher.add_listener(FinishRequestEvent, gated_finish, priority=-100)
+    middleware = RequestLifecycleMiddleware(
+        _answering_app(b"hello"), dispatcher=dispatcher, message_factory=_messages()
+    )
+    running = asyncio.ensure_future(middleware(_http_scope(), _receive, _journalling_send(journal)))
+    _ = await waiting.wait()
+
+    _ = running.cancel()
+    await asyncio.sleep(0)
+    gate.set()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+
+    assert "finish:done" in journal
+    assert journal[-1] == "terminate:200"
+
+
+async def test_a_terminate_listener_past_the_cleanup_timeout_is_cut(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(lifecycle_module, "_CLEANUP_TIMEOUT", 0.05)
+    journal: list[str] = []
+    dispatcher = _journalling_dispatcher(journal)
+
+    async def stuck(_event: TerminateEvent) -> None:
+        _ = await asyncio.Event().wait()
+
+    dispatcher.add_listener(TerminateEvent, stuck, priority=-100)
+    middleware = RequestLifecycleMiddleware(
+        _answering_app(b"hello"), dispatcher=dispatcher, message_factory=_messages()
+    )
+
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(middleware(_http_scope(), _receive, _journalling_send(journal)), 5)
+
     assert journal[-1] == "terminate:200"

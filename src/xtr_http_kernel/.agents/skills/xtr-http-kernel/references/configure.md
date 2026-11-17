@@ -23,6 +23,8 @@ def http_kernel() -> HttpKernelConfig:
 | `log_channel` | `"request"` | the logging channel the error listener writes to |
 | `middleware_priority` | `0` | where the lifecycle middleware sits among the contributed factories, highest outermost |
 | `app` | `None` | the `"package.module:app"` string the router commands load the application from |
+| `trusted_hosts` | `()` | the hosts a request may name (`"shop.test"`, `"*.shop.test"`, an address), matched lowercased; any other gets 400 before the lifecycle. Empty lets every host through |
+| `max_body_size` | `10485760` | the most bytes of a body read (10 MiB), uploads included; more gets 413 from outside the lifecycle (no `ExceptionEvent`). `None` reads any body; a Starlette `Route(max_body_size=...)` raises it for one route |
 
 ## What the constructor refuses
 
@@ -30,7 +32,9 @@ Each raises `InvalidArgumentError`, which is also a `ValueError`:
 
 - a `request_id_header` that is not an HTTP token (`"bad header"` with a space, or empty);
 - an empty `log_channel`;
-- an `app` that is not exactly one module and one attribute around a single `:`.
+- an `app` that is not exactly one module and one attribute around a single `:`;
+- a `trusted_hosts` entry that names no host (`""`, `"*"`, `"a*.test"`, one with a port).
+- a `max_body_size` that is zero or negative.
 
 ## log_channel
 

@@ -13,6 +13,13 @@ __all__ = ["HttpKernelConfig"]
 _HTTP_TOKEN: Final = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
 """What a header field name may be made of."""
 
+_TRUSTED_HOST: Final = re.compile(
+    r"(\*\.)?[a-z0-9_]([a-z0-9_-]*[a-z0-9_])?(\.[a-z0-9_]([a-z0-9_-]*[a-z0-9_])?)*|\[[0-9a-f:.]+\]"
+)
+"""A host a request may name: a name or address, ``*.`` and a domain, or a bracketed address."""
+
+_TEN_MIB: Final = 10 * 1024 * 1024
+
 
 @dataclass(frozen=True, slots=True)
 class HttpKernelConfig:
@@ -37,11 +44,20 @@ class HttpKernelConfig:
             contributed factories — highest outermost.
         app: The ``"package.module:app"`` import string the console commands
             load the application from, when they need one.
+        trusted_hosts: The hosts a request may name in its ``Host`` header —
+            exact names, ``*.example.com`` for every subdomain, addresses (a
+            long one in brackets) — matched lowercased; any other host is
+            answered 400 before the lifecycle starts. Empty, the default, lets
+            every host through.
+        max_body_size: The most bytes of a request body read, uploads
+            included; a request sending more is answered 413. ``None`` reads
+            any body. A route taking larger uploads raises its own limit.
 
     Raises:
         InvalidArgumentError: When ``request_id_header`` is not an HTTP token,
-            ``log_channel`` is empty, or ``app`` does not hold exactly one
-            module and one attribute around a single ``:``.
+            ``log_channel`` is empty, ``app`` does not hold exactly one
+            module and one attribute around a single ``:``, a trusted host
+            names no host, or ``max_body_size`` is not positive.
     """
 
     request_id_header: str = "X-Request-Id"
@@ -50,6 +66,8 @@ class HttpKernelConfig:
     log_channel: str = "request"
     middleware_priority: int = 0
     app: str | None = None
+    trusted_hosts: tuple[str, ...] = ()
+    max_body_size: int | None = _TEN_MIB
 
     def __post_init__(self) -> None:
         """Refuse values the lifecycle would silently misread."""
@@ -66,3 +84,13 @@ class HttpKernelConfig:
             if not (module and separator and attribute) or ":" in attribute:
                 message = f'app must read "package.module:app", not {self.app!r}'
                 raise InvalidArgumentError(message)
+        if self.max_body_size is not None and self.max_body_size <= 0:
+            message = f"max_body_size must be positive or None, not {self.max_body_size}"
+            raise InvalidArgumentError(message)
+        lowered = tuple(host.lower() for host in self.trusted_hosts)
+        for host in lowered:
+            if not _TRUSTED_HOST.fullmatch(host):
+                message = f"trusted_hosts entries must each name a host or *.domain, not {host!r}"
+                raise InvalidArgumentError(message)
+        # Hosts are matched as the client wrote them, which browsers send lowercased.
+        object.__setattr__(self, "trusted_hosts", lowered)

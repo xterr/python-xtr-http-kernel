@@ -63,7 +63,8 @@ async def test_the_log_listeners_join_when_logging_is_active() -> None:
         dispatcher = await booted.container.get(EventDispatcherInterface)
 
         assert dispatcher.get_listeners(KernelEvents.EXCEPTION)
-        assert dispatcher.get_listeners(KernelEvents.TERMINATE)
+        # The request's log unit is its unit of work's: no listener frames it.
+        assert dispatcher.get_listeners(KernelEvents.TERMINATE) == []
         # The prepend declared the request channel on the logging config.
         assert booted.container.has(LoggerInterface, "request")
 

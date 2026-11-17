@@ -119,7 +119,7 @@ async def test_a_server_error_logs_one_critical_record_with_the_request_id() -> 
     assert criticals[0].extra["request_id"] == "boom-1"
 
 
-async def test_a_client_error_status_logs_at_error_level() -> None:
+async def test_a_client_error_status_logs_at_info_level() -> None:
     app = _application(_kernel())
 
     async with serving(app) as client:
@@ -127,7 +127,8 @@ async def test_a_client_error_status_logs_at_error_level() -> None:
 
     assert response.status_code == 500
     handler = logging_config.CAPTURED[-1]
-    assert handler.has_records(Level.ERROR)
+    assert handler.has_records(Level.INFO)
+    assert not handler.has_records(Level.ERROR)
     assert not handler.has_records(Level.CRITICAL)
 
 

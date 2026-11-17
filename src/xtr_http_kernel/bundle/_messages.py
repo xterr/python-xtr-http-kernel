@@ -124,11 +124,13 @@ async def server_request(
     parsed side is left unread, and an endpoint that injects nothing reads
     the wire itself, untouched.
 
-    A form the served request parsed is closed as the request's scope ends —
-    the same moment the framework closes a form it parsed itself, and
-    idempotent with the lifecycle's own close at the request's exit — so the
-    files that came with the request stay open for as long as the request
-    does.
+    The form the served request parsed, and the files that came with it, are
+    closed by whoever built the connection: the lifecycle as the request
+    leaves, or — without it — this factory as the request's scope ends, the
+    moment the framework closes a form it parsed itself. A unit of work opened
+    inside the request — a message handled through ``sync://`` — is handed
+    the same request and closes nothing, so the files stay open for as long
+    as the request does.
 
     Args:
         message_factory: What builds the served request out of the connection.
@@ -145,6 +147,7 @@ async def server_request(
         raise UnsupportedConnectionError(cast("str", framework_request.scope["type"]))
 
     connection = served_connection_of(framework_request.scope)
+    built = connection is None
     if connection is None:
         connection = ServedConnection(framework_request, message_factory)
 
@@ -154,7 +157,8 @@ async def server_request(
             await served.ensure_parsed()
         yield served
     finally:
-        await connection.close()
+        if built:
+            await connection.close()
 
 
 def response(response_factory: ResponseFactoryInterface) -> ResponseInterface:

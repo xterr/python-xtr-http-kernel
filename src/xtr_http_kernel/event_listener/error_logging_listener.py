@@ -28,8 +28,9 @@ class ErrorLoggingListener:
     interrupt or an exit is nobody's — it is how a timeout, a disconnected
     caller or a shutdown reaches the lifecycle — so it is logged ``info``.
     Of the failures that are left, one carrying an integer ``status_code``
-    below 500 is the caller's, and logged ``error``; a server status, or an
-    exception saying nothing about status, is logged ``critical``. The
+    below 500 is the caller's — a missing page, a refused permission — and
+    logged ``info``, so a scanner cannot flood the error log; a server status,
+    or an exception saying nothing about status, is logged ``critical``. The
     exception itself travels under the logging contract's exception key, so
     formatters print its class, origin and cause.
     """
@@ -58,5 +59,5 @@ class ErrorLoggingListener:
         status = getattr(exception, "status_code", None)
         known = status if isinstance(status, int) else None
         if known is not None and known < _SERVER_ERROR:
-            return self._logger.error
+            return self._logger.info
         return self._logger.critical

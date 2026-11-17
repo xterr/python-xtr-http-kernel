@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, final
 
 import pytest
+from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 from typing_extensions import override
 from xtr_dependency_injection import Bundle, Kernel, as_bundle
 
@@ -144,7 +145,10 @@ async def test_the_bundle_alone_stacks_its_lifecycle_middleware() -> None:
     async with await kernel.boot() as booted:
         stack = await booted.container.get(MiddlewareStack)
 
-    assert isinstance(stack.wrap(_passthrough), RequestLifecycleMiddleware)
+    # The body limit is outermost, on by default; the lifecycle sits right inside it.
+    outermost = stack.wrap(_passthrough)
+    assert isinstance(outermost, RequestBodyLimitMiddleware)
+    assert isinstance(outermost.app, RequestLifecycleMiddleware)
 
 
 def test_a_non_integer_priority_fails_the_build_naming_the_service() -> None:

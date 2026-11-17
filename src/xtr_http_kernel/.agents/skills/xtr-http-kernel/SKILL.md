@@ -65,9 +65,9 @@ the environment are read at that moment. Then it wraps two seams:
 
 Serve it with any ASGI server: `uvicorn --reset-contextvars app.web:app` (uvicorn 0.45 or
 later). The flag starts each request in a context of its own; without it a request on a
-kept-alive connection can start with the context variables an earlier one set. The kernel's own
-per-request state is safe either way; the application's, and that of the libraries it uses, is
-only safe with it.
+kept-alive connection can start with the context variables an earlier one set. What the xtr
+libraries keep per request is safe either way (`setup()` serves each connection in a detached
+context); the application's own context variables are only safe with it.
 
 ## Routes
 
@@ -249,6 +249,9 @@ scanned module needs no further registration.
 | `FinishRequestEvent` | handling finished, on every path | put away what the request set up |
 | `TerminateEvent` | everything was sent | read `status_code`, which is `500` when nothing left |
 
+Finish and terminate listeners run to their end even when the request is cancelled, each in its
+own task with a copy of the request's context, within 30 seconds; `ResponseEvent` fires once.
+
 - `set_response` stops the event: the listeners after it do not run.
 - `ExceptionEvent` only fires while nothing has been sent, and only an `Exception` is turned
   into a response; a cancellation or an interrupt is announced and then carries on out.
@@ -261,7 +264,8 @@ scanned module needs no further registration.
 ## What ships already
 
 The bundle registers `RequestIdListener` and `DisallowRobotsIndexingListener` always,
-`LogUnitListener` and `ErrorLoggingListener` when the logging bundle is active, and
+`ErrorLoggingListener` when the logging bundle is active (whose `LogUnitParticipant` opens the
+per-request logging unit with the request's unit of work), and
 `RateLimitHeadersListener` when the rate limiter bundle is. So a request id, a per-request
 logging unit, an uncaught exception written to the log, a noindex header and the
 `X-RateLimit-*` headers are all already done: configure them rather than writing your own. See
@@ -371,8 +375,9 @@ to make.
        return HttpKernelConfig(disallow_search_indexing=True, app="app.web:app")
    ```
 
-   Six fields, all optional: `request_id_header`, `trust_request_id`,
-   `disallow_search_indexing`, `log_channel`, `middleware_priority`, `app`. See
+   Eight fields, all optional: `request_id_header`, `trust_request_id`,
+   `disallow_search_indexing`, `log_channel`, `middleware_priority`, `app`, `trusted_hosts`,
+   `max_body_size` (10 MiB by default). See
    [references/configure.md](references/configure.md) for each one's default and meaning.
 5. **Environment** nothing.
 6. **Run** any ASGI server against the module `setup` was called in: `uvicorn app.web:app`.

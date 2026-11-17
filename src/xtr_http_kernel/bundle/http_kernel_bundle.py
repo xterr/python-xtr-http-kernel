@@ -30,7 +30,7 @@ from xtr_event_dispatcher.bundle import LISTENER_TAG, EventDispatcherBundle
 from xtr_logging_contracts import LoggerInterface
 from xtr_service_contracts import ContainerInterface  # noqa: TC002 — read at runtime, as above
 
-from xtr_http_kernel.event import ExceptionEvent, RequestEvent, ResponseEvent, TerminateEvent
+from xtr_http_kernel.event import ExceptionEvent, RequestEvent, ResponseEvent
 from xtr_http_kernel.event_listener import (
     DisallowRobotsIndexingListener,
     ErrorLoggingListener,
@@ -58,12 +58,9 @@ if TYPE_CHECKING:
 
 __all__ = ["HttpKernelBundle"]
 
-# The unit of work opens before anything else contributes and closes after
-# everything else has heard the terminate; the request id settles right after
-# the unit opens, so every record made while handling carries it.
-_UNIT_OPEN_PRIORITY: Final = 8192
+# The request id settles before the default-priority listeners run, so every
+# record made while handling carries it.
 _REQUEST_ID_PRIORITY: Final = 4096
-_UNIT_CLOSE_PRIORITY: Final = -8192
 
 
 @final
@@ -131,8 +128,11 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
         graph of an application that never runs one.
         """
         register_messages(services)
-        _ = services.set(RequestLifecycleMiddlewareFactory).add_tag(
-            MIDDLEWARE_TAG, priority=config.middleware_priority
+        _ = (
+            services.set(RequestLifecycleMiddlewareFactory)
+            .set_argument("trusted_hosts", config.trusted_hosts)
+            .set_argument("max_body_size", config.max_body_size)
+            .add_tag(MIDDLEWARE_TAG, priority=config.middleware_priority)
         )
         _ = services.set(_middleware_stack).set_argument("keys", ())
         _ = (
@@ -153,26 +153,6 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
             .add_tag(LISTENER_TAG, event=ResponseEvent, method="on_response")
         )
         if bundle_active(builder, "logging"):
-            # Needs xtr-logging, which the logging bundle being active proves installed.
-            from xtr_http_kernel.event_listener.log_unit_listener import (  # noqa: PLC0415 — xtr-logging is optional
-                LogUnitListener,
-            )
-
-            _ = (
-                services.set(LogUnitListener)
-                .add_tag(
-                    LISTENER_TAG,
-                    event=RequestEvent,
-                    method="on_request",
-                    priority=_UNIT_OPEN_PRIORITY,
-                )
-                .add_tag(
-                    LISTENER_TAG,
-                    event=TerminateEvent,
-                    method="on_terminate",
-                    priority=_UNIT_CLOSE_PRIORITY,
-                )
-            )
             _ = services.set(_error_logging_listener(config.log_channel)).add_tag(
                 LISTENER_TAG, event=ExceptionEvent, method="on_exception"
             )

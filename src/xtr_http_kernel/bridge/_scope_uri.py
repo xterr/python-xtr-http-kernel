@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final, cast
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
     from starlette.types import Scope
     from xtr_http_message_contracts import UriInterface
@@ -43,22 +43,26 @@ def scope_uri(uris: UriFactoryInterface, scope: Scope) -> UriInterface:
         reports — and the query string as it was sent. A connection naming no
         address and sending no ``Host`` header — which no server and no
         HTTP/1.1 client does — leaves the URI with no authority at all.
+
+        A ``Host`` header the URI refuses — a space, a slash, an unclosed
+        bracket — reads as no header, so the listening address stands in; an
+        address the URI refuses too leaves it with no authority. Whatever a
+        client sends, the request can be served.
     """
-    host, port = _authority(scope)
     query = cast("bytes", scope.get("query_string", b"")).decode("latin-1")
+    base = uris.create_uri().with_scheme(cast("str", scope.get("scheme", _DEFAULT_SCHEME)))
+    located = base
+    for host, port in _authorities(scope):
+        try:
+            located = base.with_host(host).with_port(port)
+        except ValueError:
+            continue
+        break
+    return located.with_path(cast("str", scope["path"])).with_query(query)
 
-    return (
-        uris.create_uri()
-        .with_scheme(cast("str", scope.get("scheme", _DEFAULT_SCHEME)))
-        .with_host(host)
-        .with_port(port)
-        .with_path(cast("str", scope["path"]))
-        .with_query(query)
-    )
 
-
-def _authority(scope: Scope) -> tuple[str, int | None]:
-    """Return the host and port the connection names, the client's claim first.
+def _authorities(scope: Scope) -> Iterator[tuple[str, int | None]]:
+    """Yield the hosts and ports the connection names, the client's claim first.
 
     The ``Host`` header is what the client asked for and so what a URI of the
     request must repeat; the address the server is listening on stands in only
@@ -66,18 +70,16 @@ def _authority(scope: Scope) -> tuple[str, int | None]:
     """
     host, port = _host_header(scope)
     if host != "":
-        return host, port
+        yield host, port
 
     server = cast("tuple[str, int | None] | None", scope.get("server"))
-    if server is None:
-        return _NO_AUTHORITY
+    if server is not None:
+        name, number = server
+        # An address with colons in it is one of the long kind, which only reads
+        # as a host inside brackets.
+        yield (f"[{name}]" if ":" in name and not name.startswith("[") else name), number
 
-    name, number = server
-    # An address with colons in it is one of the long kind, which only reads
-    # as a host inside brackets.
-    bracketed = f"[{name}]" if ":" in name and not name.startswith("[") else name
-
-    return bracketed, number
+    yield _NO_AUTHORITY
 
 
 def _host_header(scope: Scope) -> tuple[str, int | None]:

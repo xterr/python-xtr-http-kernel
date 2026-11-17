@@ -75,16 +75,17 @@ def test_a_server_error_status_logs_critical(
     assert logger.entries[0][0] is Level.CRITICAL
 
 
-def test_a_client_error_status_logs_error(
+def test_a_client_error_status_logs_info(
     server_request: ServerRequestInterface, state: MutableMapping[str, object]
 ) -> None:
+    # A 404 or a 403 is the caller's doing: logged loud, a scanner floods the error log.
     logger = RecordingLogger()
 
     ErrorLoggingListener(logger).on_exception(
         ExceptionEvent(server_request, state, TeapotError("no"))
     )
 
-    assert logger.entries[0][0] is Level.ERROR
+    assert logger.entries[0][0] is Level.INFO
 
 
 def test_a_status_that_is_not_a_number_counts_as_unknown(

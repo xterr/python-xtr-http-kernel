@@ -7,13 +7,12 @@ bundle registers them.
 | --- | --- | --- | --- |
 | `RequestIdListener` | `RequestEvent`, `ResponseEvent` | always | mints a `uuid4().hex` — or keeps a well-formed incoming id, where `trust_request_id` says to — puts it on `request.state.request_id`, binds it to the log context when logging is around, and echoes it on the response under `request_id_header` |
 | `DisallowRobotsIndexingListener` | `ResponseEvent` | always | stamps `X-Robots-Tag: noindex` on every response, when `disallow_search_indexing` turns it on |
-| `LogUnitListener` | `RequestEvent`, `TerminateEvent` | logging bundle active | opens a logging unit of work per request and closes it once all was sent |
-| `ErrorLoggingListener` | `ExceptionEvent` | logging bundle active | writes every uncaught exception to `log_channel`, at `info` for a cancellation, an interrupt or an exit, `error` below a 500 status and `critical` otherwise, leaving the response to whoever answers it |
+| `ErrorLoggingListener` | `ExceptionEvent` | logging bundle active | writes every uncaught exception to `log_channel`, at `info` for a cancellation, an interrupt or an exit and for a status below 500, `critical` otherwise, leaving the response to whoever answers it |
 | `RateLimitHeadersListener` | `ResponseEvent` | rate limiter bundle active | writes the `X-RateLimit-*` headers of the limit that speaks for the response, and makes the response private |
 
-The two logging listeners open and close the unit of work outside everything else, so every
-record made while handling carries the request's id. The request id settles right after the unit
-opens, for the same reason.
+The per-request logging unit is not a listener: the logging bundle's `LogUnitParticipant` opens
+it with the request's unit of work and closes it with that unit, so every record made while
+handling carries the request's id.
 
 What this means for application code:
 

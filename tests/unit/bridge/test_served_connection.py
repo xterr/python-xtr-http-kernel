@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tracemalloc
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -234,3 +235,58 @@ async def test_the_own_request_is_read_before_anything_routes() -> None:
 
     # Nothing is published on this connection yet, so its own request reads.
     assert await served.get_body().get_contents() == b"own"
+
+
+def _upload(size: int) -> bytes:
+    return (
+        (
+            f"--{_BOUNDARY}\r\n"
+            'Content-Disposition: form-data; name="doc"; filename="big.bin"\r\n'
+            "Content-Type: application/octet-stream\r\n\r\n"
+        ).encode()
+        + b"x" * size
+        + f"\r\n--{_BOUNDARY}--\r\n".encode()
+    )
+
+
+async def test_a_large_upload_read_through_the_published_request_is_not_held_in_memory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chunk = 64 * 1024
+    chunks = [_upload(0)[: -len(f"\r\n--{_BOUNDARY}--\r\n")]]
+    chunks += [b"x" * chunk for _ in range(30 * 1024 * 1024 // chunk)]
+    chunks.append(f"\r\n--{_BOUNDARY}--\r\n".encode())
+
+    async def wire() -> Message:
+        # As a server hands an upload over: a chunk at a time, each a fresh object.
+        data = chunks.pop(0)
+        return {"type": "http.request", "body": data, "more_body": bool(chunks)}
+
+    served, request = _served(b"", _MULTIPART)
+    framework = Request(request.scope, wire)
+
+    def published(scope: Scope) -> Request | None:
+        return framework if scope is request.scope else None
+
+    monkeypatch.setattr(served_connection, "connection_of", published)
+
+    tracemalloc.start()
+    try:
+        _ = await served.get_body().get_contents()
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    await _connection_of(request).close()
+
+    # Parsed straight off the wire into a spooled file, never read whole first.
+    assert peak < 8 * 1024 * 1024
+    assert set(served.get_uploaded_files()) == {"doc"}
+
+
+async def test_a_form_read_before_routing_still_reaches_the_endpoint() -> None:
+    served, request = _served(b"title=dune", b"application/x-www-form-urlencoded")
+
+    _ = await served.get_body().get_contents()
+    endpoint = Request(request.scope, await _connection_of(request).replay(request.receive))
+
+    assert dict(await endpoint.form()) == {"title": "dune"}
