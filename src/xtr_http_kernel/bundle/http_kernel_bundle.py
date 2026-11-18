@@ -41,7 +41,9 @@ from xtr_http_kernel.routing.decorator.as_route_resource import route_resources_
 from xtr_http_kernel.routing.decorator.as_routes import routes_files_of
 
 from ._messages import register as register_messages
+from ._profiler import register as register_profiler
 from .http_kernel_config import HttpKernelConfig
+from .profiler_pass import ProfilerPass
 from .request_lifecycle_middleware_factory import RequestLifecycleMiddlewareFactory
 from .route_registry_pass import RouteRegistryPass
 
@@ -99,6 +101,7 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
         builder.register_attribute_for_autoconfiguration(route_resources_of, register_resource)
         builder.register_attribute_for_autoconfiguration(routes_files_of, register_routes_file)
         builder.add_compiler_pass(RouteRegistryPass(resources, files))
+        builder.add_compiler_pass(ProfilerPass())
 
     @override
     def prepend_extension(self, builder: ContainerBuilder) -> None:
@@ -107,9 +110,17 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
         The channel name here is the config default: this bundle's own config
         resolves after logging's, so a renamed channel is declared by the
         application in its logging configuration instead.
+
+        In debug mode, a handler keeping each request's records for its
+        profile joins the logging configuration too.
         """
         if bundle_active(builder, "logging"):
             builder.prepend_extension_config("logging", _add_request_channel)
+            if bool(builder.get_parameter("kernel.debug")):
+                # Needs xtr-logging, which the logging bundle being active proves installed.
+                from ._profiler_logging import add_debug_handler  # noqa: PLC0415 — optional
+
+                builder.prepend_extension_config("logging", add_debug_handler)
 
     @override
     def load_extension(
@@ -151,6 +162,11 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
             .add_tag(LISTENER_TAG, event=ResponseEvent, method="on_response")
         )
         if bundle_active(builder, "logging"):
+            # Needs xtr-logging, which the logging bundle being active proves installed.
+            from ._profiler_logging import register_debug_handler  # noqa: PLC0415
+
+            if bool(builder.get_parameter("kernel.debug")):
+                register_debug_handler(services)
             _ = services.set(_error_logging_listener(config.log_channel)).add_tag(
                 LISTENER_TAG, event=ExceptionEvent, method="on_exception"
             )
@@ -166,6 +182,8 @@ class HttpKernelBundle(Bundle[HttpKernelConfig]):
             )
         if bundle_active(builder, "console"):
             services.load("xtr_http_kernel.command")
+        if config.profiler.enabled:
+            register_profiler(config, services, builder)
 
     @override
     def process(self, builder: ContainerBuilder) -> None:

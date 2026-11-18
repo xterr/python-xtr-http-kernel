@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Final
 
 from xtr_http_kernel.exception.invalid_argument_error import InvalidArgumentError
+
+from .profiler_config import ProfilerConfig
 
 __all__ = ["HttpKernelConfig"]
 
@@ -52,6 +54,7 @@ class HttpKernelConfig:
         max_body_size: The most bytes of a request body read, uploads
             included; a request sending more is answered 413. ``None`` reads
             any body. A route taking larger uploads raises its own limit.
+        profiler: Whether, and how, requests are profiled; off by default.
 
     Raises:
         InvalidArgumentError: When ``request_id_header`` is not an HTTP token,
@@ -68,6 +71,7 @@ class HttpKernelConfig:
     app: str | None = None
     trusted_hosts: tuple[str, ...] = ()
     max_body_size: int | None = _TEN_MIB
+    profiler: ProfilerConfig = field(default_factory=ProfilerConfig)
 
     def __post_init__(self) -> None:
         """Refuse values the lifecycle would silently misread."""

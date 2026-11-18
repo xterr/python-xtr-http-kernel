@@ -295,6 +295,44 @@ A refusal is `429 Too Many Requests` with `Retry-After`, raised as `TooManyReque
 See [references/rate-limits.md](references/rate-limits.md) for keys, tokens, methods, headers,
 routers and limiting by hand.
 
+## Profile requests, and write a collector
+
+Off by default; `HttpKernelConfig(profiler=ProfilerConfig(enabled=True))` turns it on, and so
+does listing the `xtr-web-profiler` bundle, which also shows the profiles. Every profiled response
+names its profile in `X-Debug-Token`; the profile is written once everything has been sent.
+
+```python
+from xtr_http_kernel.data_collector import DATA_COLLECTOR_TAG, ProfiledRequest, clone_var
+
+
+class CartCollector:
+    @property
+    def name(self) -> str:
+        return "cart"
+
+    def collect(self, profiled: ProfiledRequest) -> dict[str, object]:
+        return {"cart": clone_var(profiled.state.get("cart"))}
+
+
+services.set(CartCollector).add_tag(
+    DATA_COLLECTOR_TAG, name="cart", template="@shop/collector/cart.html.j2", priority=250
+)
+```
+
+- `collect` returns plain data and keeps nothing on the collector: requests run at once.
+- What settles after the response started goes in `late_collect(data, profiled)`
+  (`LateDataCollectorInterface`).
+- Work done during the request (queries, calls, dispatches) records into a `RequestTrace`
+  (`RequestTrace("cart_added")`); the collector implements `TracingDataCollectorInterface`, whose
+  `begin_request()` calls `trace.begin()`, and reads `trace.entries()` in `collect`. Outside a
+  profiled request `record` does nothing.
+- Register a library's collector only when `profiling_active(builder)` (from
+  `xtr_http_kernel.bundle`) is true, imported after `bundle_active(builder, "http_kernel")`.
+- Read profiles with the `Profiler` service (`load_profile`, `load_profile_from_response`,
+  `find`) or `FileProfilerStorage(folder)` in a test; `ProfilerConfig.storage_path` moves them.
+- `collect=False` + `collect_parameter="profile"` profiles only `?profile=1`;
+  `only_exceptions=True` keeps failures only.
+
 ## Contribute middleware from a bundle
 
 A bundle tags a service that builds a middleware (a callable taking the downstream ASGI app and

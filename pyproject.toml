@@ -30,6 +30,7 @@ dependencies = [
     # the limits of a urlencoded form, which every request read as a message
     # goes through (GHSA-82w8-qh3p-5jfq).
     "starlette>=1.6",
+    "xtr-clock>=7.0,<8",
     "xtr-dependency-injection>=7.0,<8",
     "xtr-event-dispatcher>=7.0,<8",
     "xtr-event-dispatcher-contracts>=7.0,<8",
@@ -40,6 +41,8 @@ dependencies = [
     "xtr-http-message-contracts>=7.0,<8",
     "xtr-logging-contracts>=7.0,<8",
     "xtr-service-contracts>=7.0,<8",
+    # The profiler times each request on it, and the time panel reads it.
+    "xtr-stopwatch>=7.0,<8",
     # A submitted form with files in it: the bridge asks the web framework for
     # the form behind every multipart body, and the framework refuses outright
     # when the parser it reads one with is missing. So a route that takes the

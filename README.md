@@ -468,6 +468,158 @@ async def login(
     ...
 ```
 
+## Profiler
+
+A profile is what happened during one request, kept for a development tool to show: the
+request and the response, a timeline of where the time went, every log record, every listener,
+the route, the exception. Profiling is **off by default** — a profile holds every request's
+headers, cookies and state — and turned on by `HttpKernelConfig.profiler`, or by the
+[web profiler](../xtr-web-profiler)'s bundle wherever that is listed, which also draws the
+profiles.
+
+```python
+from xtr_dependency_injection import configure
+
+from xtr_http_kernel.bundle import HttpKernelConfig, ProfilerConfig
+
+
+@configure
+def http_kernel() -> HttpKernelConfig:
+    return HttpKernelConfig(profiler=ProfilerConfig(enabled=True))
+```
+
+With it on, every request is profiled as its response starts, and the response names its
+profile in `X-Debug-Token`. What settles later — the whole duration, the records logged while the
+body streamed, the last events — is added once everything has been sent, and the profile is then
+written in a worker thread, so the caller never waits for the disk. A request whose handling raised
+before any response started is profiled as the 500 the server answered with.
+
+- **Per request, whatever runs at once.** Each request's data is its own: the collectors return
+  what they kept rather than holding it, the timeline is timed per request, and the event trace
+  and the log records are kept per unit of work.
+- **The profiler's own pages are not profiled**: `excluded_paths` leaves out `/_wdt` and
+  `/_profiler` by default.
+- **On demand.** `collect=False` with `collect_parameter="profile"` profiles only a request
+  carrying `?profile=1` (or a state entry of that name); `only_exceptions=True` keeps only the
+  failures.
+- **Kept two days**, as gzipped JSON under `<cache_dir>/profiler/` — `storage_path` moves them —
+  found through an index read newest first; about one write in ten deletes the expired ones.
+
+| `ProfilerConfig` field | Default | What it sets |
+|---|---|---|
+| `enabled` | `False` | whether requests are profiled at all |
+| `collect` | `True` | profile a request unless it asks otherwise |
+| `collect_parameter` | `None` | a query parameter or state key whose boolean value turns profiling on or off for that request |
+| `only_exceptions` | `False` | keep only requests whose handling raised |
+| `excluded_paths` | `("^/_(wdt\|profiler)",)` | regular expressions; a matching path is not profiled |
+| `excluded_status_codes` | `()` | statuses a profile is not kept for |
+| `storage_path` | `None` | where profiles are kept; `None` is `<kernel.cache_dir>/profiler` |
+| `lifetime_seconds` | `172800` | how long a profile is kept |
+
+Read a profile back through the `Profiler` service — `await profiler.load_profile(token)`,
+`await profiler.load_profile_from_response(response.headers)`, `await profiler.find(ip, url,
+limit, method, start=, end=, status_code=)` (a `url` starting with `!` excludes) — or straight
+from `FileProfilerStorage(folder)` in a test. `profiler.disable()` leaves the current request
+unprofiled, and `enable()` profiles it, whatever the other requests do.
+
+The core collectors, each a panel of the web profiler:
+
+| Collector | Keeps |
+|---|---|
+| `request` | method, URI, headers, query, cookies, path parameters, an already-parsed body, state; the response's status and headers; a `curl` command. Credentials are kept as `******` |
+| `time` | the duration, and every event the request's [stopwatch](../xtr-stopwatch) section timed: the section, the application's handling (`controller`), each event listener |
+| `memory` | the process's peak memory |
+| `ajax` | nothing: the browser lists the page's background requests |
+| `exception` | the exception, its chain of causes, and each frame's source and local variables |
+| `logger` | every record of the request — in debug mode, with the logging bundle active. A context entry named like a credential is kept as `******` |
+| `events` | the listeners called and not called, and the events nobody heard — in debug mode, where the dispatcher is traced |
+| `router` | the route that answered, and a redirect's target |
+| `config` | the Python version, the environment, the active bundles, the xtr packages installed |
+
+In debug mode with the logging bundle active, the bundle adds a handler named `profiler` to the
+logging configuration — a `DebugHandler` keeping the records of each unit of work that began
+recording — which the `logger` collector reads. The collector begins it as a profiled request
+arrives, so a request that is not profiled, a command or a worker keeps no record.
+
+### Writing a collector
+
+A collector implements `DataCollectorInterface` — a `name`, and `collect(profiled)` returning
+what it keeps as plain data — and `LateDataCollectorInterface` when more of it settles once the
+response has left. `profiled` is a `ProfiledRequest`: the request as a message, the response's
+status and headers, the request's state bag and the exception, if any. Something happening while
+the request is handled records itself — on a traced service, on the state — and the collector
+reads it; `clone_var(value)` turns any object into a tree the panel shows.
+
+```python
+from xtr_http_kernel.data_collector import DATA_COLLECTOR_TAG, ProfiledRequest, clone_var
+
+
+class CartCollector:
+    @property
+    def name(self) -> str:
+        return "cart"
+
+    def collect(self, profiled: ProfiledRequest) -> dict[str, object]:
+        return {"cart": clone_var(profiled.state.get("cart"))}
+
+
+# in a bundle's load_extension
+services.set(CartCollector).add_tag(
+    DATA_COLLECTOR_TAG, name="cart", template="@shop/collector/cart.html.j2", priority=250
+)
+```
+
+The tag names the collector, the template showing its panel, and a `priority` — higher first,
+in the toolbar and in the menu; `request` is `335`, `config` is `-255`. The web profiler's README
+says [how a panel template is written](../xtr-web-profiler#writing-a-panel).
+
+#### Recording while the request is handled
+
+A library whose work happens during the request — statements run, messages dispatched, calls
+made — records it into a `RequestTrace` and has its collector read the trace back. One process
+serves many requests at once, so the trace keeps each request's entries in that request's own
+context, a worker thread running a synchronous endpoint included; outside a profiled request,
+`record` does nothing, and the instrumentation costs a lookup.
+
+The collector implements `TracingDataCollectorInterface` as well: the profiler calls its
+`begin_request()` once it has decided the request is profiled, and that starts the trace afresh.
+
+```python
+from xtr_http_kernel.data_collector import ProfiledRequest, RequestTrace
+
+
+class CartCollector:
+    def __init__(self) -> None:
+        self._added: RequestTrace[str] = RequestTrace("cart_added")
+
+    @property
+    def name(self) -> str:
+        return "cart"
+
+    def begin_request(self) -> None:
+        self._added.begin()
+
+    def record(self, sku: str) -> None:  # called by the cart while the request is handled
+        self._added.record(sku)
+
+    def collect(self, profiled: ProfiledRequest) -> dict[str, object]:
+        return {"added": list(self._added.entries())}
+```
+
+A bundle registers such a collector only when requests are profiled. `profiling_active(builder)`
+answers it from `load_extension`, whatever order the bundles load in; import it only once the
+http kernel's bundle is active, so the library keeps working without the http kernel installed:
+
+```python
+from xtr_dependency_injection import bundle_active
+
+if bundle_active(builder, "http_kernel"):
+    from xtr_http_kernel.bundle import profiling_active
+
+    if profiling_active(builder):
+        register_profiler(services)
+```
+
 ## Use in an application
 
 Everything adding this package to an application on
@@ -529,6 +681,7 @@ default:
 | `app` | `None` | the `"package.module:app"` string the router commands load the application from |
 | `trusted_hosts` | `()` | the hosts a request may name — `"shop.test"`, `"*.shop.test"`, an address; any other is answered 400. Empty lets every host through |
 | `max_body_size` | `10485760` | the most bytes of a request body read, uploads included (10 MiB); more is answered 413. `None` reads any body |
+| `profiler` | `ProfilerConfig()` | whether and how requests are profiled — off by default; see [Profiler](#profiler) |
 
 The constructor refuses values the lifecycle would silently misread: a `request_id_header` that
 is not an HTTP token, an empty `log_channel`, an `app` that is not exactly one module and one
@@ -792,6 +945,8 @@ itself, as well as from `xtr_http_kernel.exception`.
 | Error | Raised when |
 |---|---|
 | `InvalidArgumentError` | an `HttpKernelConfig` field holds a value the lifecycle would misread; also a `ValueError` |
+| `InvalidCollectorPriorityError` | a `http_kernel.data_collector` tag's `priority` is not an integer; also a `TypeError` |
+| `InvalidCollectorTagError` | a `http_kernel.data_collector` tag lacks its `name` or its `template`; also a `ValueError` |
 | `InvalidCookieError` | a request message carries a cookie a `Cookie` header cannot carry unchanged — a name that is not a token, or a value holding `;`, a control character or anything beyond visible ASCII; also a `ValueError` |
 | `InvalidMiddlewarePriorityError` | a `http_kernel.middleware` tag's `priority` is not an integer |
 | `InvalidRateLimitError` | a `RateLimited` takes fewer than one token, limits a router that already has routes, or its key function returns no string; also a `ValueError` |
@@ -800,6 +955,8 @@ itself, as well as from `xtr_http_kernel.exception`.
 | `StreamedResponseBodyError` | a response being built into a message streams its body, which cannot be read without consuming it |
 | `TooManyRequestsError` | a limiter refused the request — a 429 the framework answers, with `Retry-After` |
 | `UnknownRateLimiterError` | a `RateLimited` names a limiter the application did not configure; also a `LookupError` |
+| `InvalidTokenError` | a profile token holds anything but letters, digits, `_` and `-`; also a `ValueError` |
+| `UnknownCollectorError` | a profile is asked for the data of a collector it does not hold; also a `LookupError` |
 | `UnsupportedConnectionError` | something asked for the request as a message while a WebSocket was being served |
 
 The routing layer's errors live in `xtr_http_kernel.routing`, under `RoutingError` — itself an
@@ -825,6 +982,8 @@ xtr_http_kernel/
 ├── middleware_stack.py             the ordered chain a bundle contributes to
 ├── middleware_tag.py               MIDDLEWARE_TAG, the tag bundles agree on
 ├── rate_limiter/                   RateLimited, when xtr-rate-limiter is installed
+├── profiler/                       Profiler, Profile, FileProfilerStorage
+├── data_collector/                 the collector contracts, clone_var and the core collectors
 ├── routing/                        as_route_resource, as_routes, the registry setup stages from
 ├── command/                        debug:router and router:match
 ├── exception/                      HttpKernelError, the root of everything this library raises
