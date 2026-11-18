@@ -15,7 +15,7 @@ imported automatically.
 from __future__ import annotations
 
 import inspect
-from typing import TYPE_CHECKING, Final, TypeAlias, cast
+from typing import TYPE_CHECKING, Final, cast
 
 from xtr_http_kernel.routing.exception.invalid_argument_error import InvalidArgumentError
 
@@ -29,7 +29,7 @@ __all__ = ["ROUTES_ATTRIBUTE", "RoutesFile", "as_routes", "routes_files_of"]
 #: Where the declaration is kept on the function.
 ROUTES_ATTRIBUTE: Final = "__xtr_routes__"
 
-RoutesFile: TypeAlias = "Callable[[FastAPI, Mapping[str, APIRouter]], None]"
+type RoutesFile = "Callable[[FastAPI, Mapping[str, APIRouter]], None]"
 
 
 def as_routes(target: RoutesFile, /) -> RoutesFile:

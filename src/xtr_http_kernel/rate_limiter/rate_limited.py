@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import inspect
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Final, ParamSpec, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Final, cast, overload
 
 from fastapi import APIRouter
 from fastapi.params import Depends
@@ -35,8 +35,6 @@ __all__ = ["RateLimitKey", "RateLimited"]
 RateLimitKey = str | Callable[[Request], str | Awaitable[str]]
 """What a request is counted under: a fixed key, or one worked out from the request."""
 
-_P = ParamSpec("_P")
-_R = TypeVar("_R")
 
 _HIDDEN_PREFIX: Final = "_xtr_rate_limit_"
 """What the parameter a decorated endpoint gains is called, numbered."""
@@ -137,9 +135,9 @@ class RateLimited(Depends):
     def __call__(self, target: APIRouter, /) -> APIRouter: ...
 
     @overload
-    def __call__(self, target: Callable[_P, _R], /) -> Callable[_P, _R]: ...
+    def __call__[**P, R](self, target: Callable[P, R], /) -> Callable[P, R]: ...
 
-    def __call__(self, target: APIRouter | Callable[_P, _R], /) -> APIRouter | Callable[_P, _R]:
+    def __call__[**P, R](self, target: APIRouter | Callable[P, R], /) -> APIRouter | Callable[P, R]:
         """Apply this limit to every route of ``target``, or to the endpoint ``target``.
 
         A router must have no route yet: the framework copies a router's
@@ -161,7 +159,7 @@ class RateLimited(Depends):
             return target
         return self._decorate(target)
 
-    def _decorate(self, endpoint: Callable[_P, _R]) -> Callable[_P, _R]:
+    def _decorate[**P, R](self, endpoint: Callable[P, R]) -> Callable[P, R]:
         """Return ``endpoint`` taking this limit as a hidden dependency.
 
         The wrapper's signature is the endpoint's with one keyword-only
@@ -183,18 +181,18 @@ class RateLimited(Depends):
         extended = signature.replace(parameters=[*others, hidden, *keywords])
 
         if inspect.iscoroutinefunction(endpoint):
-            call = cast("Callable[_P, Awaitable[object]]", endpoint)
+            call = cast("Callable[P, Awaitable[object]]", endpoint)
 
             @functools.wraps(endpoint)
-            async def asynchronous(*args: _P.args, **kwargs: _P.kwargs) -> object:
+            async def asynchronous(*args: P.args, **kwargs: P.kwargs) -> object:
                 _ = kwargs.pop(name, None)
                 return await call(*args, **kwargs)
 
-            wrapper = cast("Callable[_P, _R]", asynchronous)
+            wrapper = cast("Callable[P, R]", asynchronous)
         else:
 
             @functools.wraps(endpoint)
-            def synchronous(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+            def synchronous(*args: P.args, **kwargs: P.kwargs) -> R:
                 _ = kwargs.pop(name, None)
                 return endpoint(*args, **kwargs)
 

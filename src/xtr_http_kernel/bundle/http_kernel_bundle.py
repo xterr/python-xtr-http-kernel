@@ -11,9 +11,7 @@ the response as HTTP messages.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final, cast, final
-
-from typing_extensions import override
+from typing import TYPE_CHECKING, Final, cast, final, override
 
 # ServiceKey stays a runtime import: it annotates a factory parameter the
 # container evaluates when the definitions are emitted.

@@ -8,7 +8,7 @@ translation.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -16,8 +16,6 @@ if TYPE_CHECKING:
     from xtr_http_message_contracts import MessageInterface
 
 __all__ = ["grouped_headers", "raw_headers", "with_raw_headers"]
-
-_M = TypeVar("_M", bound="MessageInterface")
 
 
 def raw_headers(message: MessageInterface) -> list[tuple[bytes, bytes]]:
@@ -62,7 +60,7 @@ def grouped_headers(raw: Iterable[tuple[bytes, bytes]]) -> Mapping[str, list[str
     return grouped
 
 
-def with_raw_headers(message: _M, raw: Iterable[tuple[bytes, bytes]]) -> _M:
+def with_raw_headers[M: "MessageInterface"](message: M, raw: Iterable[tuple[bytes, bytes]]) -> M:
     """Return ``message`` carrying ``raw`` and no other header.
 
     Args:

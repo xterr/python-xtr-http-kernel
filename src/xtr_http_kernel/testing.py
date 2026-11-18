@@ -27,7 +27,7 @@ def override_services(
     app: FastAPI,
     overrides: Mapping[type | tuple[type, Hashable], object],
     /,
-) -> Generator[None, None, None]:
+) -> Generator[None]:
     """Serve ``app`` with ``overrides`` while the block is entered.
 
     A key is a type, or a ``(type, qualifier)`` pair for a qualified

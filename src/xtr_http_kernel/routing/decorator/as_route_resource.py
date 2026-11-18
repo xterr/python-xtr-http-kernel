@@ -17,7 +17,7 @@ includes what it wants, where it wants it.
 from __future__ import annotations
 
 import inspect
-from typing import TYPE_CHECKING, Final, TypeVar, cast
+from typing import TYPE_CHECKING, Final, cast
 
 from xtr_http_kernel.routing.exception.invalid_argument_error import InvalidArgumentError
 
@@ -29,10 +29,8 @@ __all__ = ["ROUTE_RESOURCE_ATTRIBUTE", "as_route_resource", "route_resources_of"
 #: Where the resource name is kept on the function.
 ROUTE_RESOURCE_ATTRIBUTE: Final = "__xtr_route_resource__"
 
-T = TypeVar("T")
 
-
-def as_route_resource(resource: str, /) -> Callable[[T], T]:
+def as_route_resource[T](resource: str, /) -> Callable[[T], T]:
     """Declare that the decorated function fills the resource ``resource``.
 
     Args:

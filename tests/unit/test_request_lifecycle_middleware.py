@@ -9,7 +9,7 @@ off a single list.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, TypeVar, cast, final
+from typing import TYPE_CHECKING, cast, final
 
 import anyio
 import pytest
@@ -32,8 +32,6 @@ if TYPE_CHECKING:
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 pytestmark = pytest.mark.anyio
-
-_EventT = TypeVar("_EventT")
 
 
 def _http_scope(path: str = "/books") -> dict[str, object]:
@@ -400,7 +398,7 @@ class _UnitScopedDispatcher:
         self._inner = _journalling_dispatcher(journal)
         self._journal = journal
 
-    async def dispatch(self, event: _EventT, event_name: str | type | None = None) -> _EventT:
+    async def dispatch[EventT](self, event: EventT, event_name: str | type | None = None) -> EventT:
         return await self._inner.dispatch(event, event_name)
 
     def begin_unit(self) -> None:
@@ -420,7 +418,7 @@ class _UnitAttributesAsData:
     def __init__(self, journal: list[str]) -> None:
         self._inner = _journalling_dispatcher(journal)
 
-    async def dispatch(self, event: _EventT, event_name: str | type | None = None) -> _EventT:
+    async def dispatch[EventT](self, event: EventT, event_name: str | type | None = None) -> EventT:
         return await self._inner.dispatch(event, event_name)
 
 

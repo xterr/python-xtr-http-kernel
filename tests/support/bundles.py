@@ -19,10 +19,9 @@ routing pass, which is what those tests watch.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast, final
+from typing import TYPE_CHECKING, cast, final, override
 from uuid import uuid4
 
-from typing_extensions import override
 from xtr_dependency_injection import Bundle, as_bundle
 
 # Read at runtime: the container fills the constructor parameter below.

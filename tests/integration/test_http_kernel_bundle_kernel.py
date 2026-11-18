@@ -25,7 +25,7 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture(autouse=True)
-def _close_any_unit() -> Generator[None, None, None]:
+def _close_any_unit() -> Generator[None]:
     yield
     end_unit()
 

@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import io
-
-from typing_extensions import override
+from typing import override
 
 __all__ = ["ShortReadFile"]
 

@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from asyncio import CancelledError
-from typing import TYPE_CHECKING, ClassVar, final
+from typing import TYPE_CHECKING, ClassVar, final, override
 
 import pytest
-from typing_extensions import override
 from xtr_logging_contracts import EXCEPTION_KEY, AbstractLogger, Level
 
 from xtr_http_kernel.event import ExceptionEvent

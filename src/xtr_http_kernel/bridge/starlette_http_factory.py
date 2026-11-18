@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Final, final
+from typing import TYPE_CHECKING, Final, final, override
 
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
-from typing_extensions import override
 
 from xtr_http_kernel.exception import InvalidCookieError
 

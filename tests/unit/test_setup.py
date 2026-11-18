@@ -126,7 +126,7 @@ async def test_pending_overrides_apply_at_the_next_build() -> None:
 
 async def test_the_applications_own_lifespan_state_passes_through() -> None:
     @asynccontextmanager
-    async def app_lifespan(_app: FastAPI) -> AsyncGenerator[dict[str, str], None]:
+    async def app_lifespan(_app: FastAPI) -> AsyncGenerator[dict[str, str]]:
         yield {"marker": "from-the-app"}
 
     app = FastAPI(lifespan=app_lifespan)

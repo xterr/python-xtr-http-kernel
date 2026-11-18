@@ -41,7 +41,7 @@ class ScopeJournal:
         return self._open()
 
     @asynccontextmanager
-    async def _open(self) -> AsyncGenerator[None, None]:
+    async def _open(self) -> AsyncGenerator[None]:
         self.entries.append("scope opened")
         try:
             yield

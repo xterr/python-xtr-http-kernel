@@ -143,7 +143,7 @@ def _serving_lifespan(app: FastAPI, builds: _Builds, inner: Lifespan[FastAPI]) -
     """Return ``inner`` wrapped in one kernel life per application life."""
 
     @asynccontextmanager
-    async def serving(target: FastAPI) -> AsyncGenerator[Mapping[str, object] | None, None]:
+    async def serving(target: FastAPI) -> AsyncGenerator[Mapping[str, object] | None]:
         compiled = builds.next()
         overrides = cast(
             "Mapping[type | tuple[type, Hashable], object] | None",

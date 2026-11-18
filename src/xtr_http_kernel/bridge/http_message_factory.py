@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Final, cast, final
+from typing import TYPE_CHECKING, Final, cast, final, override
 
 from starlette.datastructures import UploadFile
-from typing_extensions import override
 
 # Read at runtime: the container fills these constructor parameters from the
 # annotations, and the upload outcome is a value this module names.
@@ -303,7 +302,7 @@ class HttpMessageFactory(HttpMessageFactoryInterface):
 
         try:
             parsed = cast("object", await request.json())
-        except (ValueError, RecursionError):  # nested too deep to parse is not JSON either
+        except ValueError, RecursionError:  # nested too deep to parse is not JSON either
             return None
 
         return cast("Mapping[str, object]", parsed) if isinstance(parsed, dict) else None

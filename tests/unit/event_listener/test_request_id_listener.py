@@ -22,7 +22,7 @@ HEX_32 = re.compile(r"^[0-9a-f]{32}$")
 
 
 @pytest.fixture(autouse=True)
-def _clean_context() -> Generator[None, None, None]:
+def _clean_context() -> Generator[None]:
     yield
     clear_context()
 

@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING, Final, Self, cast, final
+from typing import TYPE_CHECKING, Final, Self, cast, final, override
 
 from starlette.datastructures import MutableHeaders
 from starlette.responses import Response as StarletteResponse
-from typing_extensions import override
 from xtr_http_message import Response as ResponseMessage
 from xtr_http_message import Stream
 from xtr_http_message_contracts import ResponseInterface
@@ -293,7 +292,8 @@ class Response(StarletteResponse, ResponseInterface):
     # ─── what the framework reads ───────────────────────────────────────
 
     @property
-    def status_code(self) -> int:
+    @override
+    def status_code(self) -> int:  # ty: ignore[invalid-explicit-override] — the framework's Response sets it in __init__, which ty does not count as a definition
         """The status code, as the message holds it."""
         return self._settled().get_status_code()
 
@@ -303,7 +303,8 @@ class Response(StarletteResponse, ResponseInterface):
         self._message = self._settled().with_status(code)
 
     @property
-    def raw_headers(self) -> list[tuple[bytes, bytes]]:
+    @override
+    def raw_headers(self) -> list[tuple[bytes, bytes]]:  # ty: ignore[invalid-explicit-override] — the framework's Response sets it in __init__, which ty does not count as a definition
         """The headers as the wire wants them, written back to the message when changed."""
         view = self._view
         if view is None:
@@ -319,6 +320,7 @@ class Response(StarletteResponse, ResponseInterface):
         self._refill()
 
     @property
+    @override
     def headers(self) -> MutableHeaders:
         """The headers as a mapping the framework can read and change."""
         return MutableHeaders(raw=self.raw_headers)

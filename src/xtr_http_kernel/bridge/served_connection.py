@@ -14,11 +14,10 @@ framework-free, can know how to do.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final, cast, final
+from typing import TYPE_CHECKING, Final, cast, final, override
 
 from starlette.datastructures import FormData
 from starlette.requests import Request
-from typing_extensions import override
 
 # Read at runtime: materialisation prefers the framework's own request,
 # whose caches spare a second reading of the wire, and looks for it on this

@@ -143,7 +143,7 @@ def _application(kernel: Kernel) -> FastAPI:
     """
 
     @asynccontextmanager
-    async def app_lifespan(_app: FastAPI) -> AsyncGenerator[dict[str, str], None]:
+    async def app_lifespan(_app: FastAPI) -> AsyncGenerator[dict[str, str]]:
         yield {"marker": "from-the-app"}
 
     app = FastAPI(lifespan=app_lifespan)

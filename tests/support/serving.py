@@ -13,7 +13,7 @@ of a chosen size while the test watches what the application allocates.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, TypeAlias, cast, final
+from typing import TYPE_CHECKING, cast, final
 
 import httpx
 
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 __all__ = ["Drive", "ServerStateBridge", "driving", "serving"]
 
-Drive: TypeAlias = "Callable[[Scope, Receive], Awaitable[list[Message]]]"
+type Drive = "Callable[[Scope, Receive], Awaitable[list[Message]]]"
 """Runs one connection at the application and returns everything it sent."""
 
 
@@ -66,7 +66,7 @@ class ServerStateBridge:
 async def serving(
     app: FastAPI,
     on_response_sent: Callable[[], None] | None = None,
-) -> AsyncGenerator[httpx.AsyncClient, None]:
+) -> AsyncGenerator[httpx.AsyncClient]:
     """Serve ``app`` for one application life and yield a client driving it."""
     async with app.router.lifespan_context(app) as state:
         bridge = ServerStateBridge(
@@ -78,7 +78,7 @@ async def serving(
 
 
 @asynccontextmanager
-async def driving(app: FastAPI) -> AsyncGenerator[Drive, None]:
+async def driving(app: FastAPI) -> AsyncGenerator[Drive]:
     """Serve ``app`` for one application life and yield a driver of raw connections.
 
     What the driver returns is the messages the application sent, so a test
