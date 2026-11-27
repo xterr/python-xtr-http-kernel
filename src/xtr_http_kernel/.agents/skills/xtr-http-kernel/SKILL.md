@@ -421,7 +421,9 @@ to make.
 6. **Run** any ASGI server against the module `setup` was called in: `uvicorn app.web:app`.
 7. **Check** `debug:bundles` shows `http_kernel` as `listed` and `active`, `event_dispatcher` as
    `required`. With a console bundle, `debug:router` lists the routes in the order routing tries
-   them, and `router:match PATH [--method GET]` names the route a path reaches.
+   them, `router:match PATH [--method GET]` names the route a path reaches, and
+   `api:openapi:export [-y] [-o PATH] [--api-gateway] [--filter-tags TAG]` writes the OpenAPI
+   description (`-y` needs the `yaml` extra).
 8. **Remove** drop the `setup(app, kernel)` call, drop the `BUNDLES` entry;
    `uv run xtr-recipes recipes:remove xtr-http-kernel` deletes
    `<app>/config/packages/http_kernel.py`, unless you edited it, in which case it is moved aside

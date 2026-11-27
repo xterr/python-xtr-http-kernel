@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from .debug_router_command import DebugRouterCommand
+from .open_api_export_command import OpenApiExportCommand
 from .route_description import RouteDescription
 from .router_match_command import RouterMatchCommand
 
-__all__ = ["DebugRouterCommand", "RouteDescription", "RouterMatchCommand"]
+__all__ = ["DebugRouterCommand", "OpenApiExportCommand", "RouteDescription", "RouterMatchCommand"]

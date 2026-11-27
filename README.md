@@ -41,6 +41,7 @@ Listeners are services, so they come from the container with everything else the
 uv add xtr-http-kernel     # the lifecycle, its bundle and setup
 uv add xtr-logging         # beside it: the listeners that log
 uv add xtr-console         # beside it: the commands that report on the router
+uv add "xtr-http-kernel[yaml]"  # api:openapi:export --yaml: the description as YAML
 uv add xtr-rate-limiter    # beside it: rate limits on routes, routers and the app
 ```
 
@@ -629,6 +630,7 @@ removing it undoes.
 - **Install** — `uv add xtr-http-kernel`; install [xtr-logging](../xtr-logging) beside it for
   the listeners that write to a log, [xtr-console](../xtr-console) for the commands that report
   on the router, [xtr-rate-limiter](../xtr-rate-limiter) for the [rate limits](#rate-limits).
+  `uv add "xtr-http-kernel[yaml]"` lets `api:openapi:export --yaml` write YAML.
   None is needed to serve requests. The
   [HTTP message contract](../xtr-http-message-contracts) and
   [its implementation](../xtr-http-message) come with the package: the
@@ -880,7 +882,7 @@ request could ever reach.
 
 ## Router commands
 
-With a console bundle active, two commands read the application without serving it — every
+With a console bundle active, three commands read the application without serving it — every
 route included, since `setup` added the contributed ones when the application was imported:
 
 - **`debug:router`** lists every route in the order routing tries them, prefixes and mounts
@@ -888,8 +890,20 @@ route included, since `setup` added the contributed ones when the application wa
 - **`router:match PATH [--method GET]`** names the route a path reaches, reports a route that
   matches the path but refuses the method as the near miss it is, and fails on a path no route
   answers.
+- **`api:openapi:export`** writes the application's OpenAPI description — the one it serves —
+  as JSON on standard output, so it pipes and redirects cleanly:
 
-Both take the application from `--app "package.module:app"`, or from `HttpKernelConfig.app`
+  | Option | |
+  |---|---|
+  | `-y`, `--yaml` | YAML instead of JSON; needs PyYAML, which the `yaml` extra installs — without it the command says so and fails |
+  | `-o`, `--output PATH` | write to the file rather than to standard output |
+  | `--spec-version 3` | the OpenAPI version; the application describes itself in 3, and `2` is refused |
+  | `--api-gateway` | what an Amazon API Gateway import accepts: every schema renamed to its letters and digits, references following; parameters named with anything but letters, digits and `._$-` dropped; `readOnly` taken off properties |
+  | `--filter-tags TAG` | only the operations carrying the tag, repeatable; a path left with none goes, and so does the description of every other tag |
+
+  Applications mounted under the application are not in it: FastAPI leaves them out.
+
+Each takes the application from `--app "package.module:app"`, or from `HttpKernelConfig.app`
 when the option is left out, and read it either side of FastAPI's move to lazily included
 routers.
 
@@ -985,7 +999,7 @@ xtr_http_kernel/
 ├── profiler/                       Profiler, Profile, FileProfilerStorage
 ├── data_collector/                 the collector contracts, clone_var and the core collectors
 ├── routing/                        as_route_resource, as_routes, the registry setup stages from
-├── command/                        debug:router and router:match
+├── command/                        debug:router, router:match and api:openapi:export
 ├── exception/                      HttpKernelError, the root of everything this library raises
 └── bundle/                         HttpKernelBundle and HttpKernelConfig
 ```

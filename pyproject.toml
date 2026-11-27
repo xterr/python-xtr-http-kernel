@@ -50,6 +50,10 @@ dependencies = [
     "python-multipart>=0.0.21",
 ]
 
+[project.optional-dependencies]
+# api:openapi:export --yaml writes the description with it; JSON needs nothing.
+yaml = ["pyyaml>=6.0.3"]
+
 # Advertises the bundle so debug:bundles can name it when installed but not listed.
 # Advertising activates nothing: an application lists the bundles it wants.
 [project.entry-points."xtr_dependency_injection.bundles"]
@@ -74,6 +78,9 @@ dev = [
     # Requests are driven straight at the application through an ASGI
     # transport, so the suite never binds a socket.
     "httpx>=0.27",
+    # api:openapi:export --yaml, and the types its use is checked against.
+    "pyyaml>=6.0.3",
+    "types-pyyaml>=6.0.12",
 ]
 
 [build-system]
