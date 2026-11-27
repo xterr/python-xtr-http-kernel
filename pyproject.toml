@@ -1,6 +1,6 @@
 [project]
 name = "xtr-http-kernel"
-version = "7.4.0"
+version = "7.5.0"
 description = "Requests turned into responses through events: a request lifecycle for FastAPI applications on the xtr kernel."
 readme = "README.md"
 requires-python = ">=3.14.4"
@@ -30,19 +30,19 @@ dependencies = [
     # the limits of a urlencoded form, which every request read as a message
     # goes through (GHSA-82w8-qh3p-5jfq).
     "starlette>=1.6",
-    "xtr-clock>=7.4,<8",
-    "xtr-dependency-injection>=7.4,<8",
-    "xtr-event-dispatcher>=7.4,<8",
-    "xtr-event-dispatcher-contracts>=7.4,<8",
+    "xtr-clock>=7.5,<8",
+    "xtr-dependency-injection>=7.5,<8",
+    "xtr-event-dispatcher>=7.5,<8",
+    "xtr-event-dispatcher-contracts>=7.5,<8",
     # The bridge builds messages and is the one place a message meets a route,
     # so both the contract and the implementation of it are required: the
     # bundle registers the implementation's factories under the contract.
-    "xtr-http-message>=7.4,<8",
-    "xtr-http-message-contracts>=7.4,<8",
-    "xtr-logging-contracts>=7.4,<8",
-    "xtr-service-contracts>=7.4,<8",
+    "xtr-http-message>=7.5,<8",
+    "xtr-http-message-contracts>=7.5,<8",
+    "xtr-logging-contracts>=7.5,<8",
+    "xtr-service-contracts>=7.5,<8",
     # The profiler times each request on it, and the time panel reads it.
-    "xtr-stopwatch>=7.4,<8",
+    "xtr-stopwatch>=7.5,<8",
     # A submitted form with files in it: the bridge asks the web framework for
     # the form behind every multipart body, and the framework refuses outright
     # when the parser it reads one with is missing. So a route that takes the
@@ -71,10 +71,10 @@ dev = [
     "pytest-cov>=7.1",
     "anyio>=4.10",
     "ty>=0.0.83",
-    "xtr-logging>=7.4,<8",
-    "xtr-console>=7.4,<8",
-    "xtr-clock>=7.4,<8",
-    "xtr-rate-limiter>=7.4,<8",
+    "xtr-logging>=7.5,<8",
+    "xtr-console>=7.5,<8",
+    "xtr-clock>=7.5,<8",
+    "xtr-rate-limiter>=7.5,<8",
     # Requests are driven straight at the application through an ASGI
     # transport, so the suite never binds a socket.
     "httpx>=0.27",
